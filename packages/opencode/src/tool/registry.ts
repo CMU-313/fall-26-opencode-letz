@@ -7,6 +7,7 @@ import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
+import { RepositoryOverviewTool } from "./repository-overview"
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
 import { TaskTool } from "./task"
@@ -104,6 +105,7 @@ const layer = Layer.effect(
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
     const globtool = yield* GlobTool
+    const repositoryOverview = yield* RepositoryOverviewTool
     const writetool = yield* WriteTool
     const edit = yield* EditTool
     const greptool = yield* GrepTool
@@ -206,6 +208,7 @@ const layer = Layer.effect(
           shell: Tool.init(shell),
           read: Tool.init(read),
           glob: Tool.init(globtool),
+          repositoryOverview: Tool.init(repositoryOverview),
           grep: Tool.init(greptool),
           edit: Tool.init(edit),
           write: Tool.init(writetool),
@@ -229,6 +232,7 @@ const layer = Layer.effect(
             tool.shell,
             tool.read,
             tool.glob,
+            tool.repositoryOverview,
             tool.grep,
             tool.edit,
             tool.write,

@@ -1,0 +1,2 @@
+Returns a JSON overview of the current working directory, including its name, sorted top-level folders, and recognized README, manifest, lockfile, and configuration filenames.
+Takes no parameters. Inspects only root directory entries, skips symlinks and common generated/dependency directories, and does not read file contents or traverse subdirectories.
