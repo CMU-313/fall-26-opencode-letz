@@ -48,7 +48,13 @@ export const Parameters = Schema.Struct({})
 const PackageMetadata = Schema.Struct({
   name: Schema.optional(Schema.Unknown),
   packageManager: Schema.optional(Schema.Unknown),
+  workspaces: Schema.optional(Schema.Unknown),
 })
+
+const WorkspaceDeclaration = Schema.Union([
+  Schema.Array(Schema.String),
+  Schema.Struct({ packages: Schema.Array(Schema.String) }),
+])
 
 const MANAGERS = new Map([
   ["bun.lock", "bun"],
@@ -101,9 +107,54 @@ export const RepositoryOverviewTool = Tool.define(
             .map((entry) => entry.name)
             .sort()
           const managers = new Set(lockfiles.map((file) => MANAGERS.get(file)!))
+          const declaration = Option.getOrNull(Schema.decodeUnknownOption(WorkspaceDeclaration)(manifest?.workspaces))
+          const patterns = declaration === null ? [] : "packages" in declaration ? declaration.packages : declaration
+          const workspacePatterns = [
+            ...new Set(
+              patterns.flatMap((pattern) => {
+                // Only relative, in-repository patterns are eligible. Never follow symlinks.
+                if (path.posix.isAbsolute(pattern) || path.win32.isAbsolute(pattern) || /[\\!]/.test(pattern)) return []
+                const segments = pattern.split("/").filter((segment) => segment !== "." && segment !== "")
+                if (!segments.length || segments.some((segment) => segment === ".." || EXCLUDED.has(segment))) return []
+                return [segments.join("/")]
+              }),
+            ),
+          ].sort()
+          const matches = yield* Effect.forEach(workspacePatterns, (pattern) =>
+            resolveWorkspaces(fs, instance.directory, pattern.split("/")),
+          )
+          const workspaces = yield* Effect.forEach(
+            [...new Set(matches.flat())].filter((directory) => directory !== instance.directory).sort(),
+            (directory) =>
+              Effect.gen(function* () {
+                const files = yield* fs.readDirectoryEntries(directory).pipe(Effect.catch(() => Effect.succeed([])))
+                const child = files.some((entry) => entry.type === "file" && entry.name === "package.json")
+                  ? yield* Effect.gen(function* () {
+                      const file = path.join(directory, "package.json")
+                      yield* ctx.ask({
+                        permission: "read",
+                        patterns: [path.relative(instance.worktree, file)],
+                        always: ["*"],
+                        metadata: { path: file },
+                      })
+                      return yield* fs.readJson(file).pipe(
+                        Effect.map(Schema.decodeUnknownOption(PackageMetadata)),
+                        Effect.map(Option.getOrNull),
+                        Effect.catch(() => Effect.succeed(null)),
+                      )
+                    })
+                  : null
+                return {
+                  path: path.relative(instance.directory, directory).split(path.sep).join("/"),
+                  name: typeof child?.name === "string" && child.name.trim() ? child.name : null,
+                }
+              }),
+          )
           const overview = {
             root: instance.directory,
             name: path.basename(instance.directory),
+            workspacePatterns,
+            workspaces,
             package: manifest
               ? { name: typeof manifest.name === "string" && manifest.name.trim() ? manifest.name : null }
               : null,
@@ -134,3 +185,22 @@ export const RepositoryOverviewTool = Tool.define(
     }
   }),
 )
+
+function resolveWorkspaces(fs: FSUtil.Interface, directory: string, segments: string[]): Effect.Effect<string[]> {
+  if (!segments.length) return Effect.succeed([directory])
+  return Effect.gen(function* () {
+    const entries = yield* fs.readDirectoryEntries(directory).pipe(Effect.catch(() => Effect.succeed([])))
+    const recursive = segments[0] === "**"
+    const current = recursive ? yield* resolveWorkspaces(fs, directory, segments.slice(1)) : []
+    const children = yield* Effect.forEach(
+      entries.filter(
+        (entry) =>
+          entry.type === "directory" &&
+          !EXCLUDED.has(entry.name) &&
+          (recursive || fs.globMatch(segments[0], entry.name)),
+      ),
+      (entry) => resolveWorkspaces(fs, path.join(directory, entry.name), recursive ? segments : segments.slice(1)),
+    )
+    return [...current, ...children.flat()]
+  })
+}

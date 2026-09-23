@@ -1,3 +1,5 @@
 Returns a JSON overview of the current working directory, including its name, sorted top-level folders, and recognized README, manifest, lockfile, and configuration filenames.
-Takes no parameters. Inspects only root directory entries and root package.json metadata, skips symlinks and common generated/dependency directories, and does not traverse subdirectories.
+Takes no parameters. Inspects root directory entries and package.json metadata, skipping symlinks and common generated/dependency directories.
 Reports the root package name and package manager, preferring a valid package.json packageManager declaration over unambiguous root lockfiles. Missing or malformed metadata is tolerated; scripts and dependencies are not returned.
+Resolves root package.json workspaces arrays or workspaces.packages arrays into sorted, unique relative directory paths and package names. Traverses only declared workspace patterns, including * and **; absolute, parent-directory, and negated patterns are ignored. Missing or invalid child manifests or names produce null names. Malformed workspace declarations produce an empty workspaces array.
+workspacePatterns lists sorted, deduplicated eligible patterns with / separators; backslash-style patterns are ignored. Malformed declarations produce an empty workspacePatterns array.
