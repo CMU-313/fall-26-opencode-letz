@@ -1,2 +1,3 @@
 Returns a JSON overview of the current working directory, including its name, sorted top-level folders, and recognized README, manifest, lockfile, and configuration filenames.
-Takes no parameters. Inspects only root directory entries, skips symlinks and common generated/dependency directories, and does not read file contents or traverse subdirectories.
+Takes no parameters. Inspects only root directory entries and root package.json metadata, skips symlinks and common generated/dependency directories, and does not traverse subdirectories.
+Reports the root package name and package manager, preferring a valid package.json packageManager declaration over unambiguous root lockfiles. Missing or malformed metadata is tolerated; scripts and dependencies are not returned.
