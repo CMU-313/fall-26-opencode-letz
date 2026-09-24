@@ -1,7 +1,16 @@
-Summarize a directory within the current workspace without making an LLM call.
-Accepts an absolute path or a path relative to the active working directory.
-Returns JSON containing inferred purpose, immediate files and their roles, important files, immediate subdirectories, and outgoing dependencies to other repository directories.
-Dependency detection scans immediate JavaScript/TypeScript files for literal imports, re-exports, dynamic imports, and require calls. Relative modules are resolved to existing files; package imports and configured aliases are reported as unresolved rather than guessed. It does not recursively scan subdirectories or follow entry symlinks.
-The purpose and roles are deterministic filename-based heuristics. This is an overview, not a complete dependency graph.
-Read permissions apply to the directory and each scanned file. Paths outside the workspace are rejected.
-At most 200 entries and 200 dependency/import records are returned; source files larger than 256 KiB are skipped. Check truncated and skipped for incomplete coverage.
+Summarize one directory within the current workspace: its likely purpose, its files and immediate subdirectories, and how it connects to the rest of the repository.
+Use this to orient yourself in an unfamiliar codebase before reading individual files.
+Accepts an absolute path or a path relative to the active working directory. Paths outside the workspace, including symlinks that point outside it, are rejected.
+Returns JSON with these fields:
+- purpose: a short, filename-based guess at what the directory is for
+- files: immediate files with an inferred role (entry point, source, test, documentation, configuration, package manifest, dependency lockfile, file)
+- importantFiles: files whose role is not plain source
+- subdirectories: immediate subdirectories (not scanned recursively)
+- relatedDirectories: other repository directories this directory imports from, with import counts and the files that import them
+- dependencies: one record per (file, target) with the specifier used and its kind: relative, alias (tsconfig "paths", e.g. "@/"), or workspace (a monorepo package linked through node_modules)
+- externalPackages: third-party packages and runtime builtins that are imported
+- unresolvedImports: relative or alias imports whose target file could not be found
+- skipped and truncated: anything that was not scanned, so you know when coverage is incomplete
+Only immediate JavaScript/TypeScript files are scanned. Type-only `import type` declarations are not counted. Imports between files inside the directory, including its subdirectories, are treated as internal and are not listed.
+Read permission is requested for the directory and for every file whose contents are read.
+At most 200 entries and 1000 imports are processed and at most 200 dependency records are listed (relatedDirectories always counts every dependency found); source files larger than 256 KiB are skipped.

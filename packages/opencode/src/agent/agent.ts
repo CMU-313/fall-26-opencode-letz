@@ -202,6 +202,7 @@ const layer = Layer.effect(
                 grep: "allow",
                 glob: "allow",
                 list: "allow",
+                directory_summary: "allow",
                 bash: "allow",
                 webfetch: "allow",
                 websearch: "allow",

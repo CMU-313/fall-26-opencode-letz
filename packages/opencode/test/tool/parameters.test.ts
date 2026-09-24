@@ -10,6 +10,7 @@ import { ToolJsonSchema } from "../../src/tool/json-schema"
 // provider-compatible while tools use Effect Schema internally.
 
 import { Parameters as ApplyPatch } from "../../src/tool/apply_patch"
+import { Parameters as DirectorySummary } from "../../src/tool/directory_summary"
 import { Parameters as Edit } from "../../src/tool/edit"
 import { Parameters as Glob } from "../../src/tool/glob"
 import { Parameters as Grep } from "../../src/tool/grep"
@@ -18,7 +19,6 @@ import { Parameters as Lsp } from "../../src/tool/lsp"
 import { Parameters as Plan } from "../../src/tool/plan"
 import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
-import { Parameters } from "../../src/tool/directory_summary"
 import { Parameters as Shell } from "../../src/tool/shell"
 import { Parameters as Skill } from "../../src/tool/skill"
 import { Parameters as Task } from "../../src/tool/task"
@@ -36,21 +36,10 @@ const accepts = (schema: Schema.Decoder<unknown>, input: unknown): boolean =>
 const toJsonSchema = ToolJsonSchema.fromSchema
 
 describe("tool parameters", () => {
-  test("directory_summary requires a nonempty directory path", () => {
-    expect(accepts(Parameters, { path: "." })).toBe(true)
-    expect(accepts(Parameters, {})).toBe(false)
-    expect(accepts(Parameters, { path: "" })).toBe(false)
-    expect(accepts(Parameters, { path: 42 })).toBe(false)
-    expect(toJsonSchema(Parameters)).toMatchObject({
-      type: "object",
-      required: ["path"],
-      properties: { path: { type: "string", minLength: 1 } },
-    })
-  })
-
   describe("JSON Schema (wire shape)", () => {
     test("apply_patch", () => expect(toJsonSchema(ApplyPatch)).toMatchSnapshot())
     test("bash", () => expect(toJsonSchema(Shell)).toMatchSnapshot())
+    test("directory_summary", () => expect(toJsonSchema(DirectorySummary)).toMatchSnapshot())
     test("edit", () => expect(toJsonSchema(Edit)).toMatchSnapshot())
     test("glob", () => expect(toJsonSchema(Glob)).toMatchSnapshot())
     test("grep", () => expect(toJsonSchema(Grep)).toMatchSnapshot())
@@ -115,6 +104,15 @@ describe("tool parameters", () => {
     })
     test("rejects non-string patchText", () => {
       expect(accepts(ApplyPatch, { patchText: 123 })).toBe(false)
+    })
+  })
+
+  describe("directory_summary", () => {
+    test("requires a nonempty path", () => {
+      expect(parse(DirectorySummary, { path: "." })).toEqual({ path: "." })
+      expect(accepts(DirectorySummary, {})).toBe(false)
+      expect(accepts(DirectorySummary, { path: "" })).toBe(false)
+      expect(accepts(DirectorySummary, { path: 42 })).toBe(false)
     })
   })
 

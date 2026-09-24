@@ -43,6 +43,23 @@ exports[`tool parameters JSON Schema (wire shape) bash 1`] = `
 }
 `;
 
+exports[`tool parameters JSON Schema (wire shape) directory_summary 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "path": {
+      "description": "Directory within the current workspace; relative paths use the active working directory.",
+      "minLength": 1,
+      "type": "string",
+    },
+  },
+  "required": [
+    "path",
+  ],
+  "type": "object",
+}
+`;
+
 exports[`tool parameters JSON Schema (wire shape) edit 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
