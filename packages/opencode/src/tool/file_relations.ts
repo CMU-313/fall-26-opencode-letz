@@ -223,7 +223,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
                 catch: (cause) => cause,
               }).pipe(Effect.catch(() => Effect.succeed([] as ReturnType<typeof scan>["imports"])))
               for (const item of imports) {
-                const bare = /^\.\.?\/?$/.test(item.specifier)
+                const bare = /^\.\.?(\/(index(\.[cm]?[jt]sx?)?)?)?$/.test(item.specifier)
                 if (!(index && bare) && !terms.some((term) => item.specifier.includes(term))) continue
                 const { resolved } = yield* classify(item.specifier, candidate)
                 if (resolved !== file) continue

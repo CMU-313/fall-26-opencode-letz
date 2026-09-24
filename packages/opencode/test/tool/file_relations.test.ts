@@ -259,7 +259,7 @@ describe("tool.file_relations", () => {
   )
 
   it.instance(
-    'finds dependents of an index file imported as "." or ".."',
+    'finds dependents of an index file imported as ".", "..", or "./index"',
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
@@ -269,12 +269,22 @@ describe("tool.file_relations", () => {
           await Bun.write(path.join(dir, "index.ts"), "export const feature = 1\n")
           await Bun.write(path.join(dir, "sibling.ts"), `import { feature } from "."\nexport const a = feature\n`)
           await Bun.write(path.join(dir, "sub/child.ts"), `import { feature } from ".."\nexport const b = feature\n`)
+          await Bun.write(
+            path.join(dir, "explicit.ts"),
+            `import { feature } from "./index.js"\nexport const c = feature\n`,
+          )
+          await Bun.write(
+            path.join(dir, "sub/explicit.ts"),
+            `import { feature } from "../index"\nexport const d = feature\n`,
+          )
         })
         const result = yield* run(path.join(test.directory, "packages/app/src/feature/index.ts"))
 
         expect((JSON.parse(result.output) as Output).dependents.files).toEqual([
+          "packages/app/src/feature/explicit.ts",
           "packages/app/src/feature/sibling.ts",
           "packages/app/src/feature/sub/child.ts",
+          "packages/app/src/feature/sub/explicit.ts",
         ])
       }),
     { git: true },
