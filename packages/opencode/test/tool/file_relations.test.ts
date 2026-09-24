@@ -6,7 +6,13 @@ import { Cause, Effect, Exit } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { FSUtil } from "@opencode-ai/core/fs-util"
-import { FileRelationsTool, DEPENDENT_LIMIT, exportTarget, packageName } from "../../src/tool/file_relations"
+import {
+  FileRelationsTool,
+  DEPENDENT_LIMIT,
+  exportTarget,
+  packageName,
+  searchPattern,
+} from "../../src/tool/file_relations"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Truncate } from "@/tool/truncate"
 import { Agent } from "../../src/agent/agent"
@@ -234,6 +240,104 @@ describe("tool.file_relations", () => {
   )
 
   it.instance(
+    "flags an incomplete dependent search when the candidate cap is hit",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        yield* Effect.promise(() =>
+          Bun.write(path.join(test.directory, "packages/app/src/noisy.ts"), `// "./helper"\n`.repeat(5001)),
+        )
+        const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
+
+        expect(
+          (JSON.parse(result.output) as Output & { dependents: { incomplete?: string } }).dependents.incomplete,
+        ).toContain("some dependents may be missing")
+      }),
+    { git: true },
+    30000,
+  )
+
+  it.instance(
+    'finds dependents of an index file imported as "." or ".."',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        yield* Effect.promise(async () => {
+          const dir = path.join(test.directory, "packages/app/src/feature")
+          await Bun.write(path.join(dir, "index.ts"), "export const feature = 1\n")
+          await Bun.write(path.join(dir, "sibling.ts"), `import { feature } from "."\nexport const a = feature\n`)
+          await Bun.write(path.join(dir, "sub/child.ts"), `import { feature } from ".."\nexport const b = feature\n`)
+        })
+        const result = yield* run(path.join(test.directory, "packages/app/src/feature/index.ts"))
+
+        expect((JSON.parse(result.output) as Output).dependents.files).toEqual([
+          "packages/app/src/feature/sibling.ts",
+          "packages/app/src/feature/sub/child.ts",
+        ])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "reads files that start with a shebang line",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const bin = path.join(test.directory, "packages/app/src/bin.cjs")
+        yield* Effect.promise(() => Bun.write(bin, `#!/usr/bin/env node\nrequire("./helper")\n`))
+
+        const imports = (JSON.parse((yield* run(bin)).output) as Output).imports
+        expect(imports.map((item) => item.specifier)).toEqual(["./helper"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "reads CommonJS require calls as imports and dependents",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const legacy = path.join(test.directory, "packages/app/src/legacy.cjs")
+        yield* Effect.promise(() =>
+          Bun.write(legacy, `const { helper } = require("./helper")\nmodule.exports = helper\n`),
+        )
+
+        const imports = (JSON.parse((yield* run(legacy)).output) as Output).imports
+        expect(imports).toEqual([
+          { specifier: "./helper", kind: "same-package", resolved: "packages/app/src/helper.ts" },
+        ])
+        const helper = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
+        expect((JSON.parse(helper.output) as Output).dependents.files).toContain("packages/app/src/legacy.cjs")
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "resolves a standalone package importing itself by name",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          await Bun.write(
+            path.join(test.directory, "package.json"),
+            JSON.stringify({ name: "solo", exports: { "./*": "./src/*.ts" } }),
+          )
+          await Bun.write(path.join(test.directory, "src/a.ts"), `import { b } from "solo/b"\nexport const a = b\n`)
+          await Bun.write(path.join(test.directory, "src/b.ts"), "export const b = 1\n")
+        })
+        const a = JSON.parse((yield* run(path.join(test.directory, "src/a.ts"))).output) as Output
+        expect(a.imports).toEqual([{ specifier: "solo/b", kind: "same-package", resolved: "src/b.ts" }])
+        const b = JSON.parse((yield* run(path.join(test.directory, "src/b.ts"))).output) as Output
+        expect(b.dependents.files).toEqual(["src/a.ts"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "errors on a nonexistent path",
     () =>
       Effect.gen(function* () {
@@ -321,6 +425,17 @@ describe("tool.file_relations helpers", () => {
     }),
   )
 
+  it.effect("matches a name only at the end of a quoted import path", () =>
+    Effect.sync(() => {
+      const regex = new RegExp(searchPattern(["en"]))
+      expect(regex.test(`import { dict } from "@opencode-ai/ui/i18n/en"`)).toBe(true)
+      expect(regex.test(`import x from './en.js'`)).toBe(true)
+      expect(regex.test(`import x from "../en/index"`)).toBe(true)
+      expect(regex.test(`const enabled = true // then`)).toBe(false)
+      expect(regex.test(`import x from "./english"`)).toBe(false)
+    }),
+  )
+
   it.effect("maps subpaths through package.json exports", () =>
     Effect.sync(() => {
       expect(exportTarget("./index.ts", ".")).toBe("./index.ts")
@@ -328,6 +443,10 @@ describe("tool.file_relations helpers", () => {
       expect(exportTarget({ ".": { import: "./dist/index.js" } }, ".")).toBe("./dist/index.js")
       expect(exportTarget({ "./*.js": "./src/*.ts" }, "./a/b.js")).toBe("./src/a/b.ts")
       expect(exportTarget({ ".": "./src/index.ts" }, "./missing")).toBeUndefined()
+      // The more specific pattern wins even when a broader one is listed first.
+      const ui = { "./*": "./src/components/*.tsx", "./i18n/*": "./src/i18n/*.ts" }
+      expect(exportTarget(ui, "./i18n/en")).toBe("./src/i18n/en.ts")
+      expect(exportTarget(ui, "./button")).toBe("./src/components/button.tsx")
     }),
   )
 })

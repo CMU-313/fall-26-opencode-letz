@@ -29,9 +29,9 @@ export type ImportInfo = {
 
 type Alias = { prefix: string; exact: boolean; targets: string[] }
 
-type PackageInfo = { root: string; name?: string; aliases: Alias[] }
+type PackageInfo = { root: string; name?: string; aliases: Alias[]; exports?: unknown; main?: string }
 
-type WorkspacePackage = { root: string; exports: unknown; main?: string }
+type WorkspacePackage = { root: string; exports?: unknown; main?: string }
 
 type Metadata = { imports: number; exports: number; dependents: number }
 
@@ -64,9 +64,14 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
       return undefined
     })
 
-    const readPackage = Effect.fn("FileRelationsTool.readPackage")(function* (manifest: string | undefined, fallback: string) {
+    const readPackage = Effect.fn("FileRelationsTool.readPackage")(function* (
+      manifest: string | undefined,
+      fallback: string,
+    ) {
       const root = manifest ? path.dirname(manifest) : fallback
-      const name = manifest ? (yield* readJsonc(manifest))?.name : undefined
+      const json = manifest ? yield* readJsonc(manifest) : undefined
+      const name = json?.name
+      const main = typeof json?.main === "string" ? json.main : undefined
       const options = (yield* readJsonc(path.join(root, "tsconfig.json")))?.compilerOptions
       const base = path.resolve(root, typeof options?.baseUrl === "string" ? options.baseUrl : ".")
       const paths: Record<string, unknown> = options?.paths && typeof options.paths === "object" ? options.paths : {}
@@ -77,7 +82,13 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
           .filter((target): target is string => typeof target === "string")
           .map((target) => path.resolve(base, target.replace(/\*$/, ""))),
       }))
-      return { root, name: typeof name === "string" ? name : undefined, aliases } satisfies PackageInfo
+      return {
+        root,
+        name: typeof name === "string" ? name : undefined,
+        aliases,
+        exports: json?.exports,
+        main,
+      } satisfies PackageInfo
     })
 
     const loadWorkspace = Effect.fn("FileRelationsTool.loadWorkspace")(function* (worktree: string) {
@@ -108,9 +119,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
           // Non-git projects report worktree "/", so fall back to the project directory
           // to keep the search from walking the whole disk.
           const root = ins.worktree === "/" ? ins.directory : ins.worktree
-          const file = path.isAbsolute(params.filePath)
-            ? params.filePath
-            : path.resolve(ins.directory, params.filePath)
+          const file = path.isAbsolute(params.filePath) ? params.filePath : path.resolve(ins.directory, params.filePath)
 
           yield* assertExternalDirectoryEffect(ctx, file, { kind: "file" })
           yield* ctx.ask({
@@ -140,7 +149,11 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
             return info
           })
 
-          const resolveWorkspace = Effect.fnUntraced(function* (specifier: string, name: string, pkg: WorkspacePackage) {
+          const resolveWorkspace = Effect.fnUntraced(function* (
+            specifier: string,
+            name: string,
+            pkg: WorkspacePackage,
+          ) {
             const sub = specifier === name ? "." : "." + specifier.slice(name.length)
             const target = exportTarget(pkg.exports, sub) ?? (sub === "." ? (pkg.main ?? "index") : sub)
             return yield* resolveFile(path.resolve(pkg.root, target))
@@ -172,18 +185,20 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
             }
 
             const name = packageName(specifier)
+            if (name === pkg.name) {
+              return { kind: "same-package" as const, resolved: yield* resolveWorkspace(specifier, name, pkg) }
+            }
             const member = workspace.get(name)
             if (!member) return { kind: "external" as const, resolved: undefined }
-            const resolved = yield* resolveWorkspace(specifier, name, member)
-            return { kind: name === pkg.name ? ("same-package" as const) : ("workspace" as const), resolved }
+            return { kind: "workspace" as const, resolved: yield* resolveWorkspace(specifier, name, member) }
           })
 
-          // Ripgrep narrows candidates to files mentioning the target's name,
+          // Ripgrep narrows candidates to files with a quoted path ending in the target's name,
           // then each candidate is parsed and resolved so only real imports count.
           const findDependents = Effect.fnUntraced(function* () {
             const pkg = yield* packageOf(file)
             const terms = searchTerms(file, pkg.name)
-            const pattern = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+            const pattern = searchPattern(terms)
             const matches = yield* ripgrep
               .grep({
                 cwd: root,
@@ -193,7 +208,10 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
                 signal: ctx.abort,
               })
               .pipe(Effect.catch(() => Effect.succeed([])))
-            const candidates = [...new Set(matches.map((match) => path.resolve(root, match.entry.path)))]
+            const candidates = new Set(matches.map((match) => path.resolve(root, match.entry.path)))
+            const index = path.basename(file, path.extname(file)) === "index"
+            // "." and ".." imports of an index file never name it, so check its neighbors directly.
+            if (index) for (const neighbor of yield* nearbyFiles(path.dirname(file))) candidates.add(neighbor)
 
             const dependents: string[] = []
             for (const candidate of candidates) {
@@ -205,18 +223,45 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
                 catch: (cause) => cause,
               }).pipe(Effect.catch(() => Effect.succeed([] as ReturnType<typeof scan>["imports"])))
               for (const item of imports) {
-                if (!terms.some((term) => item.specifier.includes(term))) continue
+                const bare = /^\.\.?\/?$/.test(item.specifier)
+                if (!(index && bare) && !terms.some((term) => item.specifier.includes(term))) continue
                 const { resolved } = yield* classify(item.specifier, candidate)
                 if (resolved !== file) continue
                 dependents.push(path.relative(root, candidate))
                 break
               }
             }
-            return dependents.toSorted()
+            return { files: dependents.toSorted(), incomplete: matches.length >= CANDIDATE_LIMIT }
+          })
+
+          // Source files in a directory and its immediate subdirectories.
+          const nearbyFiles = Effect.fnUntraced(function* (dir: string) {
+            const list = (target: string) =>
+              fs.readDirectoryEntries(target).pipe(Effect.catch(() => Effect.succeed([] as FSUtil.DirEntry[])))
+            const files: string[] = []
+            for (const entry of yield* list(dir)) {
+              const full = path.join(dir, entry.name)
+              if (entry.type === "file" && EXTENSIONS.includes(path.extname(entry.name))) files.push(full)
+              if (entry.type !== "directory" || entry.name === "node_modules") continue
+              for (const child of yield* list(full)) {
+                if (child.type === "file" && EXTENSIONS.includes(path.extname(child.name)))
+                  files.push(path.join(full, child.name))
+              }
+            }
+            return files
           })
 
           const source = yield* fs.readFileStringSafe(file)
-          const scanned = scan(source ?? "", file)
+          const scanned = yield* Effect.try({
+            try: () => scan(source ?? "", file),
+            catch: (cause) => cause,
+          }).pipe(
+            Effect.catch((cause) =>
+              Effect.die(
+                new Error(`Could not parse ${file}: ${cause instanceof Error ? cause.message : String(cause)}`),
+              ),
+            ),
+          )
           const pkg = yield* packageOf(file)
 
           const imports: ImportInfo[] = []
@@ -230,7 +275,8 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
             })
           }
 
-          const dependents = yield* findDependents()
+          const search = yield* findDependents()
+          const dependents = search.files
           const shown = dependents.slice(0, DEPENDENT_LIMIT)
           const result = {
             file: path.relative(root, file),
@@ -242,6 +288,9 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
               files: shown,
               ...(dependents.length > shown.length && {
                 truncated: `...and ${dependents.length - shown.length} more (showing first ${DEPENDENT_LIMIT})`,
+              }),
+              ...(search.incomplete && {
+                incomplete: `search stopped after ${CANDIDATE_LIMIT} matching lines, so some dependents may be missing`,
               }),
             },
           }
@@ -260,9 +309,13 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
 // and type-only imports and exports are dropped because they erase at runtime.
 export function scan(source: string, file: string) {
   const loader = file.endsWith(".tsx") ? "tsx" : file.endsWith(".jsx") ? "jsx" : /\.[cm]?ts$/.test(file) ? "ts" : "js"
-  const result = new Bun.Transpiler({ loader }).scan(source)
+  const transpiler = new Bun.Transpiler({ loader })
+  // Bun's scanner rejects a leading "#!" line, so blank it out first.
+  source = source.replace(/^#!.*/, "")
+  // scan() finds exports; scanImports() also reports require() calls, which scan() skips.
+  const exports = transpiler.scan(source).exports
   const seen = new Map<string, { specifier: string; dynamic: boolean }>()
-  for (const item of result.imports) {
+  for (const item of transpiler.scanImports(source)) {
     const dynamic = item.kind === "dynamic-import"
     const existing = seen.get(item.path)
     if (existing) existing.dynamic &&= dynamic
@@ -270,7 +323,7 @@ export function scan(source: string, file: string) {
   }
   return {
     imports: [...seen.values()].toSorted((a, b) => a.specifier.localeCompare(b.specifier)),
-    exports: [...result.exports].toSorted(),
+    exports: [...exports].toSorted(),
   }
 }
 
@@ -291,19 +344,32 @@ export function exportTarget(exports: unknown, sub: string): string | undefined 
   const map = exports as Record<string, unknown>
   if (!Object.keys(map).some((key) => key.startsWith("."))) return sub === "." ? pick(map) : undefined
   if (sub in map) return pick(map[sub])
-  for (const [key, value] of Object.entries(map)) {
-    const star = key.indexOf("*")
-    if (star < 0) continue
-    const before = key.slice(0, star)
-    const after = key.slice(star + 1)
-    if (sub.length < before.length + after.length || !sub.startsWith(before) || !sub.endsWith(after)) continue
-    return pick(value)?.replace("*", sub.slice(before.length, sub.length - after.length))
-  }
-  return undefined
+  // Like Node, the pattern with the longest prefix before "*" wins, regardless of key order.
+  const best = Object.entries(map)
+    .map(([key, value]) => ({
+      value,
+      before: key.slice(0, key.indexOf("*")),
+      after: key.slice(key.indexOf("*") + 1),
+      star: key.includes("*"),
+    }))
+    .filter((item) => item.star && sub.length >= item.before.length + item.after.length)
+    .filter((item) => sub.startsWith(item.before) && sub.endsWith(item.after))
+    .toSorted((a, b) => b.before.length - a.before.length)[0]
+  return best
+    ? pick(best.value)?.replace("*", sub.slice(best.before.length, sub.length - best.after.length))
+    : undefined
 }
 
 // Words an importing specifier must contain: the file's own name, or for index
 // files the folder name plus the package name, since an entry point can be imported by either.
+// Matches a term only at the end of a quoted import path ("./en", "@x/en.js", "../en/index"),
+// so short names like "en" do not match every line in the repository.
+export function searchPattern(terms: string[]) {
+  const escaped = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+  const ext = "(\\.[cm]?[jt]sx?)?"
+  return `["'\`/](${escaped})${ext}(/index${ext})?["'\`]`
+}
+
 export function searchTerms(file: string, pkgName?: string) {
   const base = path.basename(file, path.extname(file))
   if (base !== "index") return [base]
