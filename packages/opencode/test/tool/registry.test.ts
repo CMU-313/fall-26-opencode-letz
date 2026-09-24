@@ -94,6 +94,12 @@ const withEmptyCodeMode = testEffect(
   ]),
 )
 const withBrokenPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
+const withFileRelations = testEffect(
+  LayerNode.compile(root, [
+    [Config.node, configLayer],
+    [RuntimeFlags.node, RuntimeFlags.layer({ experimentalFileRelations: true })],
+  ]),
+)
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -106,6 +112,20 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).not.toContain("task_status")
+    }),
+  )
+
+  it.instance("does not expose file_relations unless its flag is enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).not.toContain("file_relations")
+    }),
+  )
+
+  withFileRelations.instance("exposes file_relations when its flag is enabled", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("file_relations")
     }),
   )
 
