@@ -1,0 +1,7 @@
+Summarize a directory within the current workspace without making an LLM call.
+Accepts an absolute path or a path relative to the active working directory.
+Returns JSON containing inferred purpose, immediate files and their roles, important files, immediate subdirectories, and outgoing dependencies to other repository directories.
+Dependency detection scans immediate JavaScript/TypeScript files for literal imports, re-exports, dynamic imports, and require calls. Relative modules are resolved to existing files; package imports and configured aliases are reported as unresolved rather than guessed. It does not recursively scan subdirectories or follow entry symlinks.
+The purpose and roles are deterministic filename-based heuristics. This is an overview, not a complete dependency graph.
+Read permissions apply to the directory and each scanned file. Paths outside the workspace are rejected.
+At most 200 entries and 200 dependency/import records are returned; source files larger than 256 KiB are skipped. Check truncated and skipped for incomplete coverage.

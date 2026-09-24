@@ -18,6 +18,7 @@ import { Parameters as Lsp } from "../../src/tool/lsp"
 import { Parameters as Plan } from "../../src/tool/plan"
 import { Parameters as Question } from "../../src/tool/question"
 import { Parameters as Read } from "../../src/tool/read"
+import { Parameters } from "../../src/tool/directory_summary"
 import { Parameters as Shell } from "../../src/tool/shell"
 import { Parameters as Skill } from "../../src/tool/skill"
 import { Parameters as Task } from "../../src/tool/task"
@@ -35,6 +36,18 @@ const accepts = (schema: Schema.Decoder<unknown>, input: unknown): boolean =>
 const toJsonSchema = ToolJsonSchema.fromSchema
 
 describe("tool parameters", () => {
+  test("directory_summary requires a nonempty directory path", () => {
+    expect(accepts(Parameters, { path: "." })).toBe(true)
+    expect(accepts(Parameters, {})).toBe(false)
+    expect(accepts(Parameters, { path: "" })).toBe(false)
+    expect(accepts(Parameters, { path: 42 })).toBe(false)
+    expect(toJsonSchema(Parameters)).toMatchObject({
+      type: "object",
+      required: ["path"],
+      properties: { path: { type: "string", minLength: 1 } },
+    })
+  })
+
   describe("JSON Schema (wire shape)", () => {
     test("apply_patch", () => expect(toJsonSchema(ApplyPatch)).toMatchSnapshot())
     test("bash", () => expect(toJsonSchema(Shell)).toMatchSnapshot())
