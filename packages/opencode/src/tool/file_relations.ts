@@ -105,6 +105,9 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context<Metadata>) =>
         Effect.gen(function* () {
           const ins = yield* InstanceState.context
+          // Non-git projects report worktree "/", so fall back to the project directory
+          // to keep the search from walking the whole disk.
+          const root = ins.worktree === "/" ? ins.directory : ins.worktree
           const file = path.isAbsolute(params.filePath)
             ? params.filePath
             : path.resolve(ins.directory, params.filePath)
@@ -123,7 +126,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
             throw new Error(`Unsupported file type: ${file} (supported: ${EXTENSIONS.join(", ")})`)
           }
 
-          const workspace = yield* loadWorkspace(ins.worktree)
+          const workspace = yield* loadWorkspace(root)
           const packages = new Map<string, PackageInfo>()
 
           // Cached per directory because dependents scanning resolves many files in the same folders.
@@ -131,8 +134,8 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
             const dir = path.dirname(target)
             const cached = packages.get(dir)
             if (cached) return cached
-            const [manifest] = yield* fs.findUp("package.json", dir, ins.worktree)
-            const info = yield* readPackage(manifest, ins.worktree)
+            const [manifest] = yield* fs.findUp("package.json", dir, root)
+            const info = yield* readPackage(manifest, root)
             packages.set(dir, info)
             return info
           })
@@ -150,7 +153,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
               const resolved = yield* resolveFile(target)
               const kind: ImportKind = inside(pkg.root, target)
                 ? "same-package"
-                : inside(ins.worktree, target)
+                : inside(root, target)
                   ? "workspace"
                   : "external"
               return { kind, resolved }
@@ -183,14 +186,14 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
             const pattern = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
             const matches = yield* ripgrep
               .grep({
-                cwd: ins.worktree,
+                cwd: root,
                 pattern,
                 include: `*.{${EXTENSIONS.map((ext) => ext.slice(1)).join(",")}}`,
                 limit: CANDIDATE_LIMIT,
                 signal: ctx.abort,
               })
               .pipe(Effect.catch(() => Effect.succeed([])))
-            const candidates = [...new Set(matches.map((match) => path.resolve(ins.worktree, match.entry.path)))]
+            const candidates = [...new Set(matches.map((match) => path.resolve(root, match.entry.path)))]
 
             const dependents: string[] = []
             for (const candidate of candidates) {
@@ -205,7 +208,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
                 if (!terms.some((term) => item.specifier.includes(term))) continue
                 const { resolved } = yield* classify(item.specifier, candidate)
                 if (resolved !== file) continue
-                dependents.push(path.relative(ins.worktree, candidate))
+                dependents.push(path.relative(root, candidate))
                 break
               }
             }
@@ -223,14 +226,14 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
               specifier: item.specifier,
               kind,
               ...(item.dynamic && { dynamic: true as const }),
-              ...(resolved && { resolved: path.relative(ins.worktree, resolved) }),
+              ...(resolved && { resolved: path.relative(root, resolved) }),
             })
           }
 
           const dependents = yield* findDependents()
           const shown = dependents.slice(0, DEPENDENT_LIMIT)
           const result = {
-            file: path.relative(ins.worktree, file),
+            file: path.relative(root, file),
             package: pkg.name ?? null,
             imports,
             exports: scanned.exports,
