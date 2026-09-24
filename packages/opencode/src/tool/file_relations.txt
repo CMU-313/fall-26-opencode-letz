@@ -1,0 +1,6 @@
+- Reports how a single JavaScript or TypeScript file relates to the rest of the codebase
+- Returns structured JSON: the file's package, what it imports, and what it exports
+- Each import is classified as "same-package" (relative paths, tsconfig path aliases, or the file's own package name), "workspace" (another package in this monorepo), or "external" (npm packages and runtime built-ins)
+- Same-package imports include the resolved file path when it can be found
+- Exports list top-level runtime exports (const, function, class, default, `export * as`); type-only exports are omitted
+- Use this tool instead of chaining grep and read when you need to understand what a file depends on or provides
