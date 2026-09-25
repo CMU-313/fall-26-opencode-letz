@@ -43,6 +43,8 @@ describe("tool.repository_overview", () => {
         package: null,
         packageManager: null,
         folders: ["packages", "src"],
+        languages: ["TypeScript"],
+        frameworks: [],
         workspaces: [],
         workspacePatterns: [],
         importantFiles: [
@@ -72,12 +74,150 @@ describe("tool.repository_overview", () => {
         package: null,
         packageManager: null,
         folders: [],
+        languages: [],
+        frameworks: [],
         workspaces: [],
         workspacePatterns: [],
         importantFiles: [],
         truncated: false,
       })
       expect(result.metadata.overview).toEqual(JSON.parse(result.output))
+    }),
+  )
+
+  it.instance("detects Java from each build configuration at root and workspace roots without source files", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.writeJson(path.join(test.directory, "package.json"), { workspaces: ["packages/app"] })
+      yield* fs.ensureDir(path.join(test.directory, "packages/app"))
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      yield* Effect.forEach([".", "packages/app"], (directory) =>
+        Effect.forEach(["pom.xml", "build.gradle", "build.gradle.kts"], (name) =>
+          Effect.gen(function* () {
+            const file = path.join(test.directory, directory, name)
+            yield* fs.writeFileString(file, "")
+            const result = yield* tool.execute({}, ctx)
+            expect(result.metadata.overview.languages).toEqual(["Java"])
+            yield* fs.remove(file)
+          }),
+        ),
+      )
+    }),
+  )
+
+  const technologyCases = [
+    {
+      title: "detects TypeScript from a root source extension",
+      files: ["index.tsx"],
+      manifest: {},
+      languages: ["TypeScript"],
+      frameworks: [],
+    },
+    {
+      title: "sorts and deduplicates languages from source and manifest filenames",
+      files: ["index.ts", "types.ts", "tsconfig.json", "main.js", "Main.java", "pyproject.toml", "go.mod", "Cargo.toml"],
+      manifest: {},
+      languages: ["Go", "Java", "JavaScript", "Python", "Rust", "TypeScript"],
+      frameworks: [],
+    },
+    {
+      title: "detects exact root dependency and devDependency framework names",
+      files: [],
+      manifest: {
+        dependencies: { react: "^19", next: "^15", express: "^5", "@angular/core": "^20" },
+        devDependencies: { vue: "^3", svelte: "^5", react: "^19" },
+      },
+      languages: [],
+      frameworks: ["Angular", "Express", "Next.js", "React", "Svelte", "Vue"],
+    },
+    {
+      title: "ignores malformed dependency containers",
+      files: [],
+      manifest: { dependencies: ["react"], devDependencies: "next" },
+      languages: [],
+      frameworks: [],
+    },
+    {
+      title: "ignores invalid dependency values while preserving valid evidence",
+      files: [],
+      manifest: { dependencies: { react: false, next: {}, vue: null, svelte: " ", express: "^5" } },
+      languages: [],
+      frameworks: ["Express"],
+    },
+    {
+      title: "does not infer technologies from weak metadata or arbitrary source text",
+      files: ["README.md", "notes.txt"],
+      manifest: {
+        name: "react-typescript-project",
+        dependencies: { typescript: "^5", "@types/react": "^19", "react-helper": "1" },
+        scripts: { build: "next build" },
+      },
+      languages: [],
+      frameworks: [],
+    },
+    {
+      title: "ignores language evidence inside generated directories and deeper source trees",
+      files: ["node_modules/main.ts", "dist/main.js", "build/main.py", "coverage/Main.java", "src/deep/main.rs"],
+      manifest: {},
+      languages: [],
+      frameworks: [],
+    },
+  ]
+
+  technologyCases.forEach((input) => {
+    it.instance(input.title, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        yield* fs.writeJson(path.join(test.directory, "package.json"), input.manifest)
+        yield* Effect.forEach(input.files, (file) =>
+          Effect.gen(function* () {
+            yield* fs.ensureDir(path.dirname(path.join(test.directory, file)))
+            yield* fs.writeFileString(path.join(test.directory, file), "React Next.js Python")
+          }),
+        )
+        const info = yield* RepositoryOverviewTool
+        const tool = yield* info.init()
+        const result = yield* tool.execute({}, ctx)
+        expect(result.metadata.overview.languages).toEqual(input.languages)
+        expect(result.metadata.overview.frameworks).toEqual(input.frameworks)
+        expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+      }),
+    )
+  })
+
+  it.instance("aggregates workspace technologies, deduplicates frameworks, and skips symlink evidence", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        workspaces: ["packages/*", "node_modules/*"],
+        dependencies: { react: "^19" },
+      })
+      yield* Effect.forEach(["packages/a", "packages/b", "node_modules/ignored"], (directory) =>
+        fs.ensureDir(path.join(test.directory, directory)),
+      )
+      yield* fs.writeJson(path.join(test.directory, "packages/a/package.json"), { dependencies: { react: "^19" } })
+      yield* fs.writeJson(path.join(test.directory, "packages/b/package.json"), { devDependencies: { vue: "^3" } })
+      yield* fs.writeJson(path.join(test.directory, "node_modules/ignored/package.json"), { dependencies: { next: "^15" } })
+      yield* fs.writeFileString(path.join(test.directory, "packages/a/index.ts"), "")
+      yield* fs.writeFileString(path.join(test.directory, "packages/b/main.py"), "")
+      yield* fs.writeFileString(path.join(test.directory, "node_modules/ignored/Main.java"), "")
+      yield* fs.symlink(
+        path.join(test.directory, "node_modules/ignored/Main.java"),
+        path.join(test.directory, "packages/a/Main.java"),
+      )
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.languages).toEqual(["Python", "TypeScript"])
+      expect(result.metadata.overview.frameworks).toEqual(["React", "Vue"])
+      expect(result.metadata.overview.workspaces).toEqual([
+        { path: "packages/a", name: null },
+        { path: "packages/b", name: null },
+      ])
     }),
   )
 

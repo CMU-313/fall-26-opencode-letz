@@ -2,6 +2,7 @@ import path from "path"
 import { Effect, Option, Schema } from "effect"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
+import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
 import { Tool } from "./tool"
 import DESCRIPTION from "./repository-overview.txt"
 
@@ -49,7 +50,40 @@ const PackageMetadata = Schema.Struct({
   name: Schema.optional(Schema.Unknown),
   packageManager: Schema.optional(Schema.Unknown),
   workspaces: Schema.optional(Schema.Unknown),
+  dependencies: Schema.optional(Schema.Unknown),
+  devDependencies: Schema.optional(Schema.Unknown),
 })
+
+const LANGUAGES = new Map([
+  ["typescript", "TypeScript"],
+  ["typescriptreact", "TypeScript"],
+  ["javascript", "JavaScript"],
+  ["javascriptreact", "JavaScript"],
+  ["python", "Python"],
+  ["go", "Go"],
+  ["rust", "Rust"],
+  ["java", "Java"],
+])
+
+const LANGUAGE_FILES = new Map([
+  ["tsconfig.json", "TypeScript"],
+  ["jsconfig.json", "JavaScript"],
+  ["pyproject.toml", "Python"],
+  ["Cargo.toml", "Rust"],
+  ["go.mod", "Go"],
+  ["pom.xml", "Java"],
+  ["build.gradle", "Java"],
+  ["build.gradle.kts", "Java"],
+])
+
+const FRAMEWORKS = new Map([
+  ["react", "React"],
+  ["next", "Next.js"],
+  ["vue", "Vue"],
+  ["svelte", "Svelte"],
+  ["@angular/core", "Angular"],
+  ["express", "Express"],
+])
 
 const WorkspaceDeclaration = Schema.Union([
   Schema.Array(Schema.String),
@@ -147,14 +181,18 @@ export const RepositoryOverviewTool = Tool.define(
                 return {
                   path: path.relative(instance.directory, directory).split(path.sep).join("/"),
                   name: typeof child?.name === "string" && child.name.trim() ? child.name : null,
+                  technologies: detectTechnologies(files, child),
                 }
               }),
           )
+          const technologies = [detectTechnologies(entries, manifest), ...workspaces.map((item) => item.technologies)]
           const overview = {
             root: instance.directory,
             name: path.basename(instance.directory),
             workspacePatterns,
-            workspaces,
+            workspaces: workspaces.map((item) => ({ path: item.path, name: item.name })),
+            languages: [...new Set(technologies.flatMap((item) => item.languages))].sort(),
+            frameworks: [...new Set(technologies.flatMap((item) => item.frameworks))].sort(),
             package: manifest
               ? { name: typeof manifest.name === "string" && manifest.name.trim() ? manifest.name : null }
               : null,
@@ -185,6 +223,23 @@ export const RepositoryOverviewTool = Tool.define(
     }
   }),
 )
+
+function detectTechnologies(entries: FSUtil.DirEntry[], manifest: typeof PackageMetadata.Type | null) {
+  return {
+    languages: entries.flatMap((entry) => {
+      if (entry.type !== "file") return []
+      const language = LANGUAGE_FILES.get(entry.name) ?? LANGUAGES.get(LANGUAGE_EXTENSIONS[path.extname(entry.name)])
+      return language ? [language] : []
+    }),
+    frameworks: [manifest?.dependencies, manifest?.devDependencies].flatMap((dependencies) => {
+      if (!dependencies || typeof dependencies !== "object" || Array.isArray(dependencies)) return []
+      return Object.entries(dependencies).flatMap(([name, version]) => {
+        const framework = FRAMEWORKS.get(name)
+        return framework && typeof version === "string" && version.trim() ? [framework] : []
+      })
+    }),
+  }
+}
 
 function resolveWorkspaces(fs: FSUtil.Interface, directory: string, segments: string[]): Effect.Effect<string[]> {
   if (!segments.length) return Effect.succeed([directory])
