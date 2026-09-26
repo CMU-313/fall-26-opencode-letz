@@ -6,6 +6,7 @@ It returns a progressive hint sequence that keeps the model grounded in evidence
 - Level 1: respond in 2-3 sentences MAX; point to the general category of the bug and the general area of the file to inspect; do not name specific lines, exact literals, or the specific failure mechanism
 - Level 2: narrow to the relevant inputs, comparisons, and state transitions without jumping to the final fix; keep the focus on the failing branch or condition instead of speculation
 - Level 3: state the likely root cause and the minimal fix area, grounded in the evidence already observed
+- After the final stage, reveal the solution instead of returning another vague hint
 
 Do not invent missing facts, read unrelated files just to make the answer look grounded, or claim a fix without checking the actual condition that fails.
 Do not skip from the symptom to the solution without first identifying the failing branch and the evidence that proves it.

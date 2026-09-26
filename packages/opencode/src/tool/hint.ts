@@ -31,6 +31,19 @@ export const HintTool = Tool.define(
 
           const resolved = state.level === 0 ? 1 : (state.level as 1 | 2 | 3)
 
+          if (state.revealed) {
+            return {
+              title: "Solution",
+              output: `Problem: ${params.problem}\n\nAll staged hints have been used. State the specific root cause and the precise fix for this problem, grounded only in evidence you've actually gathered (code you've read, commands you've run, hints already given). Name the exact faulty line or condition, explain why it fails, and give the minimal correction. Do not give a generic or templated answer; it must resolve the stated problem specifically.`,
+              metadata: {
+                problem: params.problem,
+                level: resolved,
+                maxLevel: 3,
+                revealed: true,
+              },
+            }
+          }
+
           const suffix =
             resolved === 1
               ? "This is hint level 1 of 3 for this problem. Respond in 2-3 sentences MAX. Point the student toward the general category of the bug (for example, 'check input validation' or 'examine the comparison logic') and the general area of the file to inspect. You must NOT state specific line numbers, quote or describe the exact code/literals involved, judge whether a comment is accurate or a red herring, or describe the specific failure mechanism (such as whitespace, encoding, casing, or similar). If you already know the root cause from your investigation, do not reveal any part of it beyond what is permitted above."
