@@ -46,6 +46,11 @@ const FILES = new Map<string, "manifest" | "lockfile" | "config">([
 
 export const Parameters = Schema.Struct({})
 
+export const MAX_COLLECTION_ITEMS = 100
+export const MAX_WORKSPACE_STEPS = 1000
+export const MAX_TEXT_LENGTH = 1024
+export const MAX_OUTPUT_BYTES = 32 * 1024
+
 const PackageMetadata = Schema.Struct({
   name: Schema.optional(Schema.Unknown),
   packageManager: Schema.optional(Schema.Unknown),
@@ -108,6 +113,15 @@ export const RepositoryOverviewTool = Tool.define(
       execute: (_params, ctx) =>
         Effect.gen(function* () {
           const instance = yield* InstanceState.context
+          const reasons = new Set<string>()
+          const bounded = <T>(items: T[], field: string) => {
+            if (items.length > MAX_COLLECTION_ITEMS) reasons.add(field)
+            return items.slice(0, MAX_COLLECTION_ITEMS)
+          }
+          const text = (value: string, field: string) => {
+            if (value.length > MAX_TEXT_LENGTH) reasons.add(field)
+            return value.slice(0, MAX_TEXT_LENGTH)
+          }
           yield* ctx.ask({
             permission: "repository_overview",
             patterns: [instance.directory],
@@ -143,22 +157,32 @@ export const RepositoryOverviewTool = Tool.define(
           const managers = new Set(lockfiles.map((file) => MANAGERS.get(file)!))
           const declaration = Option.getOrNull(Schema.decodeUnknownOption(WorkspaceDeclaration)(manifest?.workspaces))
           const patterns = declaration === null ? [] : "packages" in declaration ? declaration.packages : declaration
-          const workspacePatterns = [
-            ...new Set(
-              patterns.flatMap((pattern) => {
-                // Only relative, in-repository patterns are eligible. Never follow symlinks.
-                if (path.posix.isAbsolute(pattern) || path.win32.isAbsolute(pattern) || /[\\!]/.test(pattern)) return []
-                const segments = pattern.split("/").filter((segment) => segment !== "." && segment !== "")
-                if (!segments.length || segments.some((segment) => segment === ".." || EXCLUDED.has(segment))) return []
-                return [segments.join("/")]
-              }),
-            ),
-          ].sort()
-          const matches = yield* Effect.forEach(workspacePatterns, (pattern) =>
-            resolveWorkspaces(fs, instance.directory, pattern.split("/")),
+          const workspacePatterns = bounded(
+            [
+              ...new Set(
+                patterns.flatMap((pattern) => {
+                  // Only relative, in-repository patterns are eligible. Never follow symlinks.
+                  if (path.posix.isAbsolute(pattern) || path.win32.isAbsolute(pattern) || /[\\!]/.test(pattern))
+                    return []
+                  const segments = pattern.split("/").filter((segment) => segment !== "." && segment !== "")
+                  if (!segments.length || segments.some((segment) => segment === ".." || EXCLUDED.has(segment)))
+                    return []
+                  if (pattern.length > MAX_TEXT_LENGTH) {
+                    reasons.add("workspacePatternLength")
+                    return []
+                  }
+                  return [segments.join("/")]
+                }),
+              ),
+            ].sort(),
+            "workspacePatterns",
           )
+          const budget = { remaining: MAX_WORKSPACE_STEPS, matches: new Set<string>(), reasons }
+          for (const pattern of workspacePatterns) {
+            yield* resolveWorkspaces(fs, instance.directory, pattern.split("/"), budget)
+          }
           const workspaces = yield* Effect.forEach(
-            [...new Set(matches.flat())].filter((directory) => directory !== instance.directory).sort(),
+            bounded([...budget.matches].filter((directory) => directory !== instance.directory).sort(), "workspaces"),
             (directory) =>
               Effect.gen(function* () {
                 const files = yield* fs.readDirectoryEntries(directory).pipe(Effect.catch(() => Effect.succeed([])))
@@ -180,43 +204,73 @@ export const RepositoryOverviewTool = Tool.define(
                   : null
                 return {
                   path: path.relative(instance.directory, directory).split(path.sep).join("/"),
-                  name: typeof child?.name === "string" && child.name.trim() ? child.name : null,
+                  name: typeof child?.name === "string" && child.name.trim() ? text(child.name, "workspaceName") : null,
                   technologies: detectTechnologies(files, child),
                 }
               }),
           )
           const technologies = [detectTechnologies(entries, manifest), ...workspaces.map((item) => item.technologies)]
           const overview = {
-            root: instance.directory,
-            name: path.basename(instance.directory),
+            root: text(instance.directory, "root"),
+            name: text(path.basename(instance.directory), "name"),
             workspacePatterns,
             workspaces: workspaces.map((item) => ({ path: item.path, name: item.name })),
             languages: [...new Set(technologies.flatMap((item) => item.languages))].sort(),
             frameworks: [...new Set(technologies.flatMap((item) => item.frameworks))].sort(),
             package: manifest
-              ? { name: typeof manifest.name === "string" && manifest.name.trim() ? manifest.name : null }
+              ? {
+                  name:
+                    typeof manifest.name === "string" && manifest.name.trim()
+                      ? text(manifest.name, "packageName")
+                      : null,
+                }
               : null,
             packageManager: explicit
-              ? { name: explicit[1], version: explicit[2], source: "package.json#packageManager" }
+              ? {
+                  name: explicit[1],
+                  version: text(explicit[2], "packageManagerVersion"),
+                  source: "package.json#packageManager",
+                }
               : managers.size === 1
                 ? { name: MANAGERS.get(lockfiles[0])!, version: null, source: lockfiles[0] }
                 : null,
-            folders: entries
-              .filter((entry) => entry.type === "directory" && !EXCLUDED.has(entry.name))
-              .map((entry) => entry.name)
-              .sort(),
-            importantFiles: entries
-              .filter((entry) => entry.type === "file")
-              .flatMap((entry) => {
-                const kind = /^README/i.test(entry.name) ? ("readme" as const) : FILES.get(entry.name)
-                return kind ? [{ path: entry.name, kind }] : []
-              })
-              .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+            folders: bounded(
+              entries
+                .filter((entry) => entry.type === "directory" && !EXCLUDED.has(entry.name))
+                .map((entry) => entry.name)
+                .sort(),
+              "folders",
+            ),
+            importantFiles: bounded(
+              entries
+                .filter((entry) => entry.type === "file")
+                .flatMap((entry) => {
+                  const kind = /^README/i.test(entry.name) ? ("readme" as const) : FILES.get(entry.name)
+                  return kind ? [{ path: entry.name, kind }] : []
+                })
+                .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
+              "importantFiles",
+            ),
             truncated: false,
+            truncationReasons: [] as string[],
+          }
+          overview.truncated = reasons.size > 0
+          overview.truncationReasons = [...reasons].sort()
+          // Remove whole entries rather than cutting serialized JSON into an invalid preview.
+          while (Buffer.byteLength(JSON.stringify(overview, null, 2)) > MAX_OUTPUT_BYTES) {
+            const field = (["workspaces", "workspacePatterns", "importantFiles", "folders"] as const)
+              .filter((key) => overview[key].length > 0)
+              .sort((a, b) => JSON.stringify(overview[b]).length - JSON.stringify(overview[a]).length)[0]
+            if (!field) break
+            overview[field].pop()
+            reasons.add("outputBytes")
+            reasons.add(field)
+            overview.truncated = true
+            overview.truncationReasons = [...reasons].sort()
           }
           return {
             title: "Repository overview",
-            metadata: { overview, truncated: false },
+            metadata: { overview, truncated: overview.truncated },
             output: JSON.stringify(overview, null, 2),
           }
         }).pipe(Effect.orDie),
@@ -241,21 +295,38 @@ function detectTechnologies(entries: FSUtil.DirEntry[], manifest: typeof Package
   }
 }
 
-function resolveWorkspaces(fs: FSUtil.Interface, directory: string, segments: string[]): Effect.Effect<string[]> {
-  if (!segments.length) return Effect.succeed([directory])
+function resolveWorkspaces(
+  fs: FSUtil.Interface,
+  directory: string,
+  segments: string[],
+  budget: { remaining: number; matches: Set<string>; reasons: Set<string> },
+): Effect.Effect<void> {
   return Effect.gen(function* () {
+    if (budget.remaining === 0) {
+      budget.reasons.add("workspaceTraversal")
+      return
+    }
+    budget.remaining--
+    if (!segments.length) {
+      budget.matches.add(directory)
+      return
+    }
     const entries = yield* fs.readDirectoryEntries(directory).pipe(Effect.catch(() => Effect.succeed([])))
     const recursive = segments[0] === "**"
-    const current = recursive ? yield* resolveWorkspaces(fs, directory, segments.slice(1)) : []
-    const children = yield* Effect.forEach(
-      entries.filter(
+    if (recursive) yield* resolveWorkspaces(fs, directory, segments.slice(1), budget)
+    for (const entry of entries
+      .filter(
         (entry) =>
           entry.type === "directory" &&
           !EXCLUDED.has(entry.name) &&
           (recursive || fs.globMatch(segments[0], entry.name)),
-      ),
-      (entry) => resolveWorkspaces(fs, path.join(directory, entry.name), recursive ? segments : segments.slice(1)),
-    )
-    return [...current, ...children.flat()]
+      )
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      if (budget.remaining === 0) {
+        budget.reasons.add("workspaceTraversal")
+        break
+      }
+      yield* resolveWorkspaces(fs, path.join(directory, entry.name), recursive ? segments : segments.slice(1), budget)
+    }
   })
 }

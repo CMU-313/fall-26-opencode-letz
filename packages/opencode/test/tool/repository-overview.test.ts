@@ -5,7 +5,12 @@ import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Agent } from "../../src/agent/agent"
 import { MessageID, SessionID } from "../../src/session/schema"
-import { RepositoryOverviewTool } from "../../src/tool/repository-overview"
+import {
+  MAX_COLLECTION_ITEMS,
+  MAX_OUTPUT_BYTES,
+  MAX_TEXT_LENGTH,
+  RepositoryOverviewTool,
+} from "../../src/tool/repository-overview"
 import { Tool } from "../../src/tool/tool"
 import { Truncate } from "../../src/tool/truncate"
 import { TestInstance } from "../fixture/fixture"
@@ -53,6 +58,7 @@ describe("tool.repository_overview", () => {
           { path: "tsconfig.json", kind: "config" },
         ],
         truncated: false,
+        truncationReasons: [],
       })
       expect(result.metadata.overview).toEqual(JSON.parse(result.output))
       expect(result.metadata.truncated).toBe(false)
@@ -80,6 +86,7 @@ describe("tool.repository_overview", () => {
         workspacePatterns: [],
         importantFiles: [],
         truncated: false,
+        truncationReasons: [],
       })
       expect(result.metadata.overview).toEqual(JSON.parse(result.output))
     }),
@@ -107,6 +114,133 @@ describe("tool.repository_overview", () => {
     }),
   )
 
+  it.instance("preserves collections and scalar text exactly at their limits without truncation", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      const patterns = Array.from(
+        { length: MAX_COLLECTION_ITEMS },
+        (_, index) => `package-${String(index).padStart(3, "0")}`,
+      )
+      const name = "名".repeat(MAX_TEXT_LENGTH)
+      yield* fs.writeJson(path.join(test.directory, "package.json"), { name, workspaces: patterns })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.workspacePatterns).toEqual(patterns)
+      expect(result.metadata.overview.package?.name).toBe(name)
+      expect(result.metadata.overview.truncationReasons).toEqual([])
+      expect(result.metadata.overview.truncated).toBe(false)
+      expect(result.metadata.truncated).toBe(false)
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+    }),
+  )
+
+  it.instance("limits sorted root collections, excludes generated folders, and repeats deterministically", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      const names = Array.from(
+        { length: MAX_COLLECTION_ITEMS + 2 },
+        (_, index) => `item-${String(index).padStart(3, "0")}`,
+      )
+      yield* Effect.forEach(names.toReversed(), (name) =>
+        Effect.gen(function* () {
+          yield* fs.ensureDir(path.join(test.directory, name))
+          yield* fs.writeFileString(path.join(test.directory, `README-${name}`), "")
+        }),
+      )
+      yield* Effect.forEach(["node_modules", ".git", "build", "dist", "coverage"], (name) =>
+        fs.ensureDir(path.join(test.directory, name)),
+      )
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.folders).toEqual(names.slice(0, MAX_COLLECTION_ITEMS))
+      expect(result.metadata.overview.importantFiles.map((file) => file.path)).toEqual(
+        names.slice(0, MAX_COLLECTION_ITEMS).map((name) => `README-${name}`),
+      )
+      expect(result.metadata.overview.truncationReasons).toEqual(["folders", "importantFiles"])
+      expect(result.metadata.truncated).toBe(true)
+      expect(result.metadata.overview.truncated).toBe(true)
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+      expect((yield* tool.execute({}, ctx)).output).toBe(result.output)
+    }),
+  )
+
+  it.instance("limits many matching workspaces to a deterministic sorted subset", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      const names = Array.from(
+        { length: MAX_COLLECTION_ITEMS + 2 },
+        (_, index) => `packages/item-${String(index).padStart(3, "0")}`,
+      )
+      yield* Effect.forEach(names.toReversed(), (name) => fs.ensureDir(path.join(test.directory, name)))
+      yield* fs.writeJson(path.join(test.directory, "package.json"), { workspaces: ["packages/*"] })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.workspaces).toEqual(
+        names.slice(0, MAX_COLLECTION_ITEMS).map((name) => ({ path: name, name: null })),
+      )
+      expect(result.metadata.overview.truncationReasons).toEqual(["workspaces"])
+      expect(result.metadata.truncated).toBe(true)
+      expect((yield* tool.execute({}, ctx)).output).toBe(result.output)
+    }),
+  )
+
+  it.instance("stops pathological workspace traversal at the shared budget and reports partial results", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.ensureDir(path.join(test.directory, "a/b/c"))
+      yield* fs.ensureDir(path.join(test.directory, "node_modules/ignored"))
+      yield* fs.writeJson(path.join(test.directory, "package.json"), { workspaces: [Array(20).fill("**").join("/")] })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.truncationReasons).toContain("workspaceTraversal")
+      expect(result.metadata.truncated).toBe(true)
+      expect(result.metadata.overview.workspaces.length).toBeGreaterThan(0)
+      expect(result.metadata.overview.workspaces.length).toBeLessThanOrEqual(MAX_COLLECTION_ITEMS)
+      expect(result.output).not.toContain("ignored")
+      expect((yield* tool.execute({}, ctx)).output).toBe(result.output)
+    }),
+  )
+
+  it.instance("bounds pattern counts, scalar text, and final JSON bytes without breaking structured output", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        name: "名".repeat(MAX_TEXT_LENGTH + 1),
+        workspaces: [
+          ...Array.from(
+            { length: MAX_COLLECTION_ITEMS + 1 },
+            (_, index) => `${String(index).padStart(3, "0")}-${"x".repeat(900)}`,
+          ),
+          "x".repeat(MAX_TEXT_LENGTH + 1),
+        ],
+      })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(MAX_OUTPUT_BYTES)
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+      expect(result.metadata.overview.package?.name).toHaveLength(MAX_TEXT_LENGTH)
+      expect(result.metadata.overview.truncationReasons).toEqual([
+        "outputBytes",
+        "packageName",
+        "workspacePatternLength",
+        "workspacePatterns",
+      ])
+      expect(result.metadata.truncated).toBe(true)
+      expect(result.metadata.overview.workspacePatterns).toEqual([...result.metadata.overview.workspacePatterns].sort())
+      expect((yield* tool.execute({}, ctx)).output).toBe(result.output)
+    }),
+  )
+
   const technologyCases = [
     {
       title: "detects TypeScript from a root source extension",
@@ -117,7 +251,16 @@ describe("tool.repository_overview", () => {
     },
     {
       title: "sorts and deduplicates languages from source and manifest filenames",
-      files: ["index.ts", "types.ts", "tsconfig.json", "main.js", "Main.java", "pyproject.toml", "go.mod", "Cargo.toml"],
+      files: [
+        "index.ts",
+        "types.ts",
+        "tsconfig.json",
+        "main.js",
+        "Main.java",
+        "pyproject.toml",
+        "go.mod",
+        "Cargo.toml",
+      ],
       manifest: {},
       languages: ["Go", "Java", "JavaScript", "Python", "Rust", "TypeScript"],
       frameworks: [],
@@ -201,7 +344,9 @@ describe("tool.repository_overview", () => {
       )
       yield* fs.writeJson(path.join(test.directory, "packages/a/package.json"), { dependencies: { react: "^19" } })
       yield* fs.writeJson(path.join(test.directory, "packages/b/package.json"), { devDependencies: { vue: "^3" } })
-      yield* fs.writeJson(path.join(test.directory, "node_modules/ignored/package.json"), { dependencies: { next: "^15" } })
+      yield* fs.writeJson(path.join(test.directory, "node_modules/ignored/package.json"), {
+        dependencies: { next: "^15" },
+      })
       yield* fs.writeFileString(path.join(test.directory, "packages/a/index.ts"), "")
       yield* fs.writeFileString(path.join(test.directory, "packages/b/main.py"), "")
       yield* fs.writeFileString(path.join(test.directory, "node_modules/ignored/Main.java"), "")
