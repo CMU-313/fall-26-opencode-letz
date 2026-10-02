@@ -57,9 +57,10 @@ Run from `packages/opencode`:
 bun test test/tool/file_relations.test.ts test/tool/registry.test.ts
 ```
 
-- `test/tool/file_relations.test.ts` (24 tests) builds a small two-package monorepo in a temp directory and runs the real tool on it. It checks:
+- `test/tool/file_relations.test.ts` (27 tests) builds a small two-package monorepo in a temp directory and runs the real tool on it. It checks:
   - each import kind (relative, tsconfig alias, `#name` imports, workspace package through an `exports` map, npm, built-in, dynamic `import()`, `require()`)
-  - that the most specific tsconfig alias wins, as in TypeScript
+  - that the most specific tsconfig alias wins and a `*` inside an alias target is filled in, as in TypeScript
+  - that `require()` uses the `require` export condition, and that paths containing `..` are normalized
   - that type-only imports and import-like text in comments or strings are ignored
   - each export form, and that type-only exports are left out
   - dependents found through relative, alias, workspace, `.`/`..`/`./index` imports, and that a file that only mentions the name is not counted

@@ -91,7 +91,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
           exact: !key.endsWith("*"),
           targets: (Array.isArray(targets) ? targets : [])
             .filter((target): target is string => typeof target === "string")
-            .map((target) => path.resolve(base, target.replace(/\*$/, ""))),
+            .map((target) => path.resolve(base, target)),
         }))
         .toSorted((a, b) => Number(b.exact) - Number(a.exact) || b.prefix.length - a.prefix.length)
       return {
@@ -132,7 +132,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
           // Non-git projects report worktree "/", so fall back to the project directory
           // to keep the search from walking the whole disk.
           const root = ins.worktree === "/" ? ins.directory : ins.worktree
-          const file = path.isAbsolute(params.filePath) ? params.filePath : path.resolve(ins.directory, params.filePath)
+          const file = path.resolve(ins.directory, params.filePath)
 
           yield* assertExternalDirectoryEffect(ctx, file, { kind: "file" })
           yield* ctx.ask({
@@ -166,24 +166,28 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
             specifier: string,
             name: string,
             pkg: WorkspacePackage,
+            require: boolean,
           ) {
             const sub = specifier === name ? "." : "." + specifier.slice(name.length)
-            const target = exportTarget(pkg.exports, sub) ?? (sub === "." ? (pkg.main ?? "index") : sub)
+            const target = exportTarget(pkg.exports, sub, require) ?? (sub === "." ? (pkg.main ?? "index") : sub)
             return yield* resolveFile(path.resolve(pkg.root, target))
           })
 
+          // `require` picks the "require" condition over "import" in package.json maps.
           const classify: (
             specifier: string,
             from: string,
+            require?: boolean,
           ) => Effect.Effect<{ kind: ImportKind; resolved: string | undefined }, Error> = Effect.fnUntraced(function* (
             specifier: string,
             from: string,
+            require = false,
           ) {
             const pkg = yield* packageOf(from)
             // "#name" imports go through the importing package's own package.json "imports" map.
             if (specifier.startsWith("#")) {
-              const target = importTarget(pkg.imports, specifier)
-              if (target && !target.startsWith(".")) return yield* classify(target, from)
+              const target = importTarget(pkg.imports, specifier, require)
+              if (target && !target.startsWith(".")) return yield* classify(target, from, require)
               const resolved = target ? yield* resolveFile(path.resolve(pkg.root, target)) : undefined
               return { kind: "same-package" as const, resolved }
             }
@@ -203,7 +207,12 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
             )
             for (const alias of aliases) {
               for (const target of alias.targets) {
-                const base = alias.exact ? target : path.join(target, specifier.slice(alias.prefix.length))
+                const rest = specifier.slice(alias.prefix.length)
+                const base = alias.exact
+                  ? target
+                  : target.includes("*")
+                    ? target.replace("*", rest)
+                    : path.join(target, rest)
                 const resolved = yield* resolveFile(base)
                 if (resolved) return { kind: "same-package" as const, resolved }
               }
@@ -214,11 +223,11 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
 
             const name = packageName(specifier)
             if (name === pkg.name) {
-              return { kind: "same-package" as const, resolved: yield* resolveWorkspace(specifier, name, pkg) }
+              return { kind: "same-package" as const, resolved: yield* resolveWorkspace(specifier, name, pkg, require) }
             }
             const member = workspace.get(name)
             if (!member) return { kind: "external" as const, resolved: undefined }
-            return { kind: "workspace" as const, resolved: yield* resolveWorkspace(specifier, name, member) }
+            return { kind: "workspace" as const, resolved: yield* resolveWorkspace(specifier, name, member, require) }
           })
 
           // Ripgrep narrows candidates to files with a quoted path ending in the target's name,
@@ -270,7 +279,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
                 const bare = BARE_INDEX_SPECIFIER.test(item.specifier)
                 if (!(index && bare) && !terms.some((term) => item.specifier.includes(term))) continue
                 const own = importKeys.has(item.specifier) && (yield* packageOf(candidate)).root === pkg.root
-                if (!own && (yield* classify(item.specifier, candidate)).resolved !== file) continue
+                if (!own && (yield* classify(item.specifier, candidate, item.require)).resolved !== file) continue
                 dependents.push(path.relative(root, candidate))
                 break
               }
@@ -315,7 +324,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
 
           const imports: ImportInfo[] = []
           for (const item of scanned.imports) {
-            const { kind, resolved } = yield* classify(item.specifier, file)
+            const { kind, resolved } = yield* classify(item.specifier, file, item.require)
             imports.push({
               specifier: item.specifier,
               kind,
@@ -361,12 +370,15 @@ export function scan(source: string, file: string) {
   source = source.replace(/^#!.*/, "")
   // scan() finds exports; scanImports() also reports require() calls, which scan() skips.
   const exports = transpiler.scan(source).exports
-  const seen = new Map<string, { specifier: string; dynamic: boolean }>()
+  const seen = new Map<string, { specifier: string; dynamic: boolean; require: boolean }>()
   for (const item of transpiler.scanImports(source)) {
     const dynamic = item.kind === "dynamic-import"
+    const require = item.kind === "require-call"
     const existing = seen.get(item.path)
-    if (existing) existing.dynamic &&= dynamic
-    else seen.set(item.path, { specifier: item.path, dynamic })
+    if (existing) {
+      existing.dynamic &&= dynamic
+      existing.require &&= require
+    } else seen.set(item.path, { specifier: item.path, dynamic, require })
   }
   return {
     imports: [...seen.values()].toSorted((a, b) => a.specifier.localeCompare(b.specifier)),
@@ -380,24 +392,25 @@ export function packageName(specifier: string) {
 }
 
 // Maps a package subpath ("." or "./fs-util") through a package.json "exports" field.
-export function exportTarget(exports: unknown, sub: string): string | undefined {
-  if (!exports || typeof exports !== "object") return sub === "." ? pick(exports) : undefined
+export function exportTarget(exports: unknown, sub: string, require = false): string | undefined {
+  if (!exports || typeof exports !== "object") return sub === "." ? pick(exports, require) : undefined
   const map = exports as Record<string, unknown>
-  if (!Object.keys(map).some((key) => key.startsWith("."))) return sub === "." ? pick(map) : undefined
-  return subpathTarget(map, sub)
+  if (!Object.keys(map).some((key) => key.startsWith("."))) return sub === "." ? pick(map, require) : undefined
+  return subpathTarget(map, sub, require)
 }
 
 // Maps a "#name" specifier through a package.json "imports" field.
-export function importTarget(imports: unknown, specifier: string): string | undefined {
+export function importTarget(imports: unknown, specifier: string, require = false): string | undefined {
   if (!imports || typeof imports !== "object") return undefined
-  return subpathTarget(imports as Record<string, unknown>, specifier)
+  return subpathTarget(imports as Record<string, unknown>, specifier, require)
 }
 
-function pick(value: unknown): string | undefined {
+function pick(value: unknown, require: boolean): string | undefined {
   if (typeof value === "string") return value
   if (!value || typeof value !== "object") return undefined
   const conditions = value as Record<string, unknown>
-  return pick(conditions.bun ?? conditions.import ?? conditions.default ?? conditions.types)
+  const style = require ? conditions.require : conditions.import
+  return pick(conditions.bun ?? style ?? conditions.default ?? conditions.types, require)
 }
 
 // Every file path a conditional target can point to, e.g. both the "bun" and "node" variants.
@@ -407,8 +420,8 @@ export function allTargets(value: unknown): string[] {
   return Object.values(value).flatMap(allTargets)
 }
 
-function subpathTarget(map: Record<string, unknown>, sub: string): string | undefined {
-  if (sub in map) return pick(map[sub])
+function subpathTarget(map: Record<string, unknown>, sub: string, require: boolean): string | undefined {
+  if (sub in map) return pick(map[sub], require)
   // Like Node, the pattern with the longest prefix before "*" wins, regardless of key order.
   const best = Object.entries(map)
     .map(([key, value]) => ({
@@ -421,7 +434,7 @@ function subpathTarget(map: Record<string, unknown>, sub: string): string | unde
     .filter((item) => sub.startsWith(item.before) && sub.endsWith(item.after))
     .toSorted((a, b) => b.before.length - a.before.length)[0]
   return best
-    ? pick(best.value)?.replace("*", sub.slice(best.before.length, sub.length - best.after.length))
+    ? pick(best.value, require)?.replace("*", sub.slice(best.before.length, sub.length - best.after.length))
     : undefined
 }
 

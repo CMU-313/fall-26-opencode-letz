@@ -421,6 +421,68 @@ describe("tool.file_relations", () => {
   )
 
   it.instance(
+    'fills a "*" in the middle of a tsconfig alias target',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          const paths = { "~/*": ["./lib/*.ts"] }
+          await Bun.write(path.join(test.directory, "package.json"), JSON.stringify({ name: "solo" }))
+          await Bun.write(path.join(test.directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { paths } }))
+          await Bun.write(path.join(test.directory, "src/a.ts"), `import "~/util"\nexport const a = 1\n`)
+          await Bun.write(path.join(test.directory, "lib/util.ts"), "export const util = 1\n")
+        })
+        const a = JSON.parse((yield* run(path.join(test.directory, "src/a.ts"))).output) as Output
+        expect(a.imports).toEqual([{ specifier: "~/util", kind: "same-package", resolved: "lib/util.ts" }])
+        const util = JSON.parse((yield* run(path.join(test.directory, "lib/util.ts"))).output) as Output
+        expect(util.dependents.files).toEqual(["src/a.ts"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    'uses the "require" export condition for require() calls',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          const exports = { ".": { import: "./esm.js", require: "./cjs.cjs" } }
+          await Bun.write(path.join(test.directory, "package.json"), JSON.stringify({ name: "solo", exports }))
+          await Bun.write(path.join(test.directory, "esm.js"), "export const x = 1\n")
+          await Bun.write(path.join(test.directory, "cjs.cjs"), "module.exports = { x: 1 }\n")
+          await Bun.write(path.join(test.directory, "use.cjs"), `const { x } = require("solo")\n`)
+          await Bun.write(path.join(test.directory, "use.mjs"), `import { x } from "solo"\nexport const y = x\n`)
+        })
+        const output = (file: string) =>
+          run(path.join(test.directory, file)).pipe(Effect.map((result) => JSON.parse(result.output) as Output))
+
+        expect((yield* output("use.cjs")).imports).toEqual([
+          { specifier: "solo", kind: "same-package", resolved: "cjs.cjs" },
+        ])
+        expect((yield* output("use.mjs")).imports).toEqual([
+          { specifier: "solo", kind: "same-package", resolved: "esm.js" },
+        ])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    'normalizes an absolute path that contains ".."',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        // String concatenation on purpose: path.join would normalize the ".." away.
+        const result = yield* run(test.directory + "/packages/app/src/lib/../helper.ts")
+        const output = JSON.parse(result.output) as Output
+
+        expect(output.file).toBe("packages/app/src/helper.ts")
+        expect(output.dependents.files).toEqual(["packages/app/src/main.ts"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "flags an incomplete dependent search when the search fails",
     () =>
       Effect.gen(function* () {
