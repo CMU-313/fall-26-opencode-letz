@@ -369,6 +369,75 @@ describe("tool.file_relations", () => {
   )
 
   it.instance(
+    'resolves "#name" imports through package.json imports, for every condition',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          const imports = { "#db": { bun: "./src/db.bun.ts", node: "./src/db.node.ts" }, "#dep": "effect" }
+          await Bun.write(path.join(test.directory, "package.json"), JSON.stringify({ name: "solo", imports }))
+          await Bun.write(path.join(test.directory, "src/a.ts"), `import "#db"\nimport "#dep"\nexport const a = 1\n`)
+          await Bun.write(path.join(test.directory, "src/db.bun.ts"), "export const db = 1\n")
+          await Bun.write(path.join(test.directory, "src/db.node.ts"), "export const db = 1\n")
+        })
+        const output = (file: string) =>
+          run(path.join(test.directory, file)).pipe(Effect.map((result) => JSON.parse(result.output) as Output))
+
+        expect((yield* output("src/a.ts")).imports).toEqual([
+          { specifier: "#db", kind: "same-package", resolved: "src/db.bun.ts" },
+          { specifier: "#dep", kind: "external" },
+        ])
+        expect((yield* output("src/db.bun.ts")).dependents.files).toEqual(["src/a.ts"])
+        expect((yield* output("src/db.node.ts")).dependents.files).toEqual(["src/a.ts"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "picks the most specific tsconfig alias and ignores an unresolved catch-all",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          const paths = { "*": ["./types/*"], "@/*": ["./src/*"], "@/ui/*": ["./ui/*"] }
+          await Bun.write(path.join(test.directory, "package.json"), JSON.stringify({ name: "solo" }))
+          await Bun.write(path.join(test.directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { paths } }))
+          await Bun.write(
+            path.join(test.directory, "src/a.ts"),
+            `import "@/ui/button"\nimport "@/b"\nimport "effect"\nexport const a = 1\n`,
+          )
+          await Bun.write(path.join(test.directory, "src/b.ts"), "export const b = 1\n")
+          await Bun.write(path.join(test.directory, "ui/button.ts"), "export const button = 1\n")
+        })
+        const result = yield* run(path.join(test.directory, "src/a.ts"))
+
+        expect((JSON.parse(result.output) as Output).imports).toEqual([
+          { specifier: "@/b", kind: "same-package", resolved: "src/b.ts" },
+          { specifier: "@/ui/button", kind: "same-package", resolved: "ui/button.ts" },
+          { specifier: "effect", kind: "external" },
+        ])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "flags an incomplete dependent search when the search fails",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"), {
+          ...ctx,
+          abort: AbortSignal.abort(),
+        })
+        const dependents = (JSON.parse(result.output) as Output & { dependents: { incomplete?: string } }).dependents
+
+        expect(dependents.incomplete).toBe("dependent search failed, so some dependents may be missing")
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "errors on a nonexistent path",
     () =>
       Effect.gen(function* () {
@@ -438,6 +507,13 @@ describe("tool.file_relations", () => {
     Effect.gen(function* () {
       const test = yield* TestInstance
       yield* workspace(test.directory)
+      // Without git, ripgrep does not apply .gitignore, so node_modules must be skipped explicitly.
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(test.directory, "node_modules/lib/uses.ts"),
+          `import { helper } from "../../packages/app/src/helper"\nexport const x = helper\n`,
+        ),
+      )
       const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
       const output = JSON.parse(result.output) as Output
 

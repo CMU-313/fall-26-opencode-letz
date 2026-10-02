@@ -31,7 +31,14 @@ export type ImportInfo = {
 
 type Alias = { prefix: string; exact: boolean; targets: string[] }
 
-type PackageInfo = { root: string; name?: string; aliases: Alias[]; exports?: unknown; main?: string }
+type PackageInfo = {
+  root: string
+  name?: string
+  aliases: Alias[]
+  exports?: unknown
+  imports?: unknown
+  main?: string
+}
 
 type WorkspacePackage = { root: string; exports?: unknown; main?: string }
 
@@ -77,18 +84,22 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
       const options = (yield* readJsonc(path.join(root, "tsconfig.json")))?.compilerOptions
       const base = path.resolve(root, typeof options?.baseUrl === "string" ? options.baseUrl : ".")
       const paths: Record<string, unknown> = options?.paths && typeof options.paths === "object" ? options.paths : {}
-      const aliases = Object.entries(paths).map(([key, targets]) => ({
-        prefix: key.replace(/\*$/, ""),
-        exact: !key.endsWith("*"),
-        targets: (Array.isArray(targets) ? targets : [])
-          .filter((target): target is string => typeof target === "string")
-          .map((target) => path.resolve(base, target.replace(/\*$/, ""))),
-      }))
+      // Like TypeScript, exact keys win, then the longest prefix, regardless of key order.
+      const aliases = Object.entries(paths)
+        .map(([key, targets]) => ({
+          prefix: key.replace(/\*$/, ""),
+          exact: !key.endsWith("*"),
+          targets: (Array.isArray(targets) ? targets : [])
+            .filter((target): target is string => typeof target === "string")
+            .map((target) => path.resolve(base, target.replace(/\*$/, ""))),
+        }))
+        .toSorted((a, b) => Number(b.exact) - Number(a.exact) || b.prefix.length - a.prefix.length)
       return {
         root,
         name: typeof name === "string" ? name : undefined,
         aliases,
         exports: json?.exports,
+        imports: json?.imports,
         main,
       } satisfies PackageInfo
     })
@@ -161,8 +172,21 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
             return yield* resolveFile(path.resolve(pkg.root, target))
           })
 
-          const classify = Effect.fnUntraced(function* (specifier: string, from: string) {
+          const classify: (
+            specifier: string,
+            from: string,
+          ) => Effect.Effect<{ kind: ImportKind; resolved: string | undefined }, Error> = Effect.fnUntraced(function* (
+            specifier: string,
+            from: string,
+          ) {
             const pkg = yield* packageOf(from)
+            // "#name" imports go through the importing package's own package.json "imports" map.
+            if (specifier.startsWith("#")) {
+              const target = importTarget(pkg.imports, specifier)
+              if (target && !target.startsWith(".")) return yield* classify(target, from)
+              const resolved = target ? yield* resolveFile(path.resolve(pkg.root, target)) : undefined
+              return { kind: "same-package" as const, resolved }
+            }
             if (specifier.startsWith(".") || path.isAbsolute(specifier)) {
               const target = path.resolve(path.dirname(from), specifier)
               const resolved = yield* resolveFile(target)
@@ -174,17 +198,19 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
               return { kind, resolved }
             }
 
-            const alias = pkg.aliases.find((item) =>
+            const aliases = pkg.aliases.filter((item) =>
               item.exact ? specifier === item.prefix : specifier.startsWith(item.prefix),
             )
-            if (alias) {
+            for (const alias of aliases) {
               for (const target of alias.targets) {
                 const base = alias.exact ? target : path.join(target, specifier.slice(alias.prefix.length))
                 const resolved = yield* resolveFile(base)
                 if (resolved) return { kind: "same-package" as const, resolved }
               }
-              return { kind: "same-package" as const, resolved: undefined }
             }
+            // A catch-all "*" alias that resolves nothing falls back to normal package lookup, as in TypeScript.
+            if (aliases.some((item) => item.prefix !== ""))
+              return { kind: "same-package" as const, resolved: undefined }
 
             const name = packageName(specifier)
             if (name === pkg.name) {
@@ -199,8 +225,19 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
           // then each candidate is parsed and resolved so only real imports count.
           const findDependents = Effect.fnUntraced(function* () {
             const pkg = yield* packageOf(file)
-            const terms = searchTerms(file, pkg.name)
+            // "#name" keys in the package's "imports" map that can point at this file (any condition).
+            const importKeys = new Set<string>()
+            if (pkg.imports && typeof pkg.imports === "object") {
+              for (const [key, value] of Object.entries(pkg.imports)) {
+                if (key.includes("*")) continue
+                for (const target of allTargets(value)) {
+                  if ((yield* resolveFile(path.resolve(pkg.root, target))) === file) importKeys.add(key)
+                }
+              }
+            }
+            const terms = [...searchTerms(file, pkg.name), ...importKeys]
             const pattern = searchPattern(terms)
+            let failed = false
             const matches = yield* ripgrep
               .grep({
                 cwd: root,
@@ -209,7 +246,12 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
                 limit: CANDIDATE_LIMIT,
                 signal: ctx.abort,
               })
-              .pipe(Effect.catch(() => Effect.succeed([])))
+              .pipe(
+                Effect.catch(() => {
+                  failed = true
+                  return Effect.succeed([])
+                }),
+              )
             const candidates = new Set(matches.map((match) => path.resolve(root, match.entry.path)))
             const index = path.basename(file, path.extname(file)) === "index"
             // "." and ".." imports of an index file never name it, so check its neighbors directly.
@@ -217,7 +259,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
 
             const dependents: string[] = []
             for (const candidate of candidates) {
-              if (candidate === file) continue
+              if (candidate === file || candidate.split(path.sep).includes("node_modules")) continue
               const source = yield* fs.readFileStringSafe(candidate).pipe(Effect.catch(() => Effect.succeed(undefined)))
               if (!source) continue
               const imports = yield* Effect.try({
@@ -227,13 +269,18 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
               for (const item of imports) {
                 const bare = BARE_INDEX_SPECIFIER.test(item.specifier)
                 if (!(index && bare) && !terms.some((term) => item.specifier.includes(term))) continue
-                const { resolved } = yield* classify(item.specifier, candidate)
-                if (resolved !== file) continue
+                const own = importKeys.has(item.specifier) && (yield* packageOf(candidate)).root === pkg.root
+                if (!own && (yield* classify(item.specifier, candidate)).resolved !== file) continue
                 dependents.push(path.relative(root, candidate))
                 break
               }
             }
-            return { files: dependents.toSorted(), incomplete: matches.length >= CANDIDATE_LIMIT }
+            const incomplete = failed
+              ? "dependent search failed, so some dependents may be missing"
+              : matches.length >= CANDIDATE_LIMIT
+                ? `search stopped after ${CANDIDATE_LIMIT} matching lines, so some dependents may be missing`
+                : undefined
+            return { files: dependents.toSorted(), incomplete }
           })
 
           // Source files in a directory and its immediate subdirectories.
@@ -291,9 +338,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
               ...(dependents.length > shown.length && {
                 truncated: `...and ${dependents.length - shown.length} more (showing first ${DEPENDENT_LIMIT})`,
               }),
-              ...(search.incomplete && {
-                incomplete: `search stopped after ${CANDIDATE_LIMIT} matching lines, so some dependents may be missing`,
-              }),
+              ...(search.incomplete && { incomplete: search.incomplete }),
             },
           }
 
@@ -336,15 +381,33 @@ export function packageName(specifier: string) {
 
 // Maps a package subpath ("." or "./fs-util") through a package.json "exports" field.
 export function exportTarget(exports: unknown, sub: string): string | undefined {
-  const pick = (value: unknown): string | undefined => {
-    if (typeof value === "string") return value
-    if (!value || typeof value !== "object") return undefined
-    const conditions = value as Record<string, unknown>
-    return pick(conditions.bun ?? conditions.import ?? conditions.default ?? conditions.types)
-  }
   if (!exports || typeof exports !== "object") return sub === "." ? pick(exports) : undefined
   const map = exports as Record<string, unknown>
   if (!Object.keys(map).some((key) => key.startsWith("."))) return sub === "." ? pick(map) : undefined
+  return subpathTarget(map, sub)
+}
+
+// Maps a "#name" specifier through a package.json "imports" field.
+export function importTarget(imports: unknown, specifier: string): string | undefined {
+  if (!imports || typeof imports !== "object") return undefined
+  return subpathTarget(imports as Record<string, unknown>, specifier)
+}
+
+function pick(value: unknown): string | undefined {
+  if (typeof value === "string") return value
+  if (!value || typeof value !== "object") return undefined
+  const conditions = value as Record<string, unknown>
+  return pick(conditions.bun ?? conditions.import ?? conditions.default ?? conditions.types)
+}
+
+// Every file path a conditional target can point to, e.g. both the "bun" and "node" variants.
+export function allTargets(value: unknown): string[] {
+  if (typeof value === "string") return [value]
+  if (!value || typeof value !== "object") return []
+  return Object.values(value).flatMap(allTargets)
+}
+
+function subpathTarget(map: Record<string, unknown>, sub: string): string | undefined {
   if (sub in map) return pick(map[sub])
   // Like Node, the pattern with the longest prefix before "*" wins, regardless of key order.
   const best = Object.entries(map)
