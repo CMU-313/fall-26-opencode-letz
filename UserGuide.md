@@ -10,7 +10,7 @@
 - `exports`: top-level runtime exports (const, function, class, default, `export * as`); type-only exports are left out
 - `dependents`: other files in the workspace that import this file, capped at 50 with a `truncated` marker like `...and 80 more (showing first 50)`
 
-It is behind a feature flag, so the agent does not see the tool unless the flag is on.
+It is behind a feature flag, so the agent does not see the tool unless the flag is on. It follows the `read` permission, so read-only agents like `explore` can use it too.
 
 ### How to use it
 
@@ -68,6 +68,7 @@ bun test test/tool/file_relations.test.ts test/tool/registry.test.ts
   - errors for a missing path, a directory, and a non-JS/TS file
   - read and external-directory permission checks
 - `test/tool/registry.test.ts` (2 file_relations tests) checks that the tool is hidden when the flag is off and listed when it is on.
+- `test/permission/next.test.ts` ("treats file_relations as a read tool") checks that the tool is shown or hidden by `read` rules.
 
 ### Why these tests are sufficient
 
