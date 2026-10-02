@@ -172,6 +172,27 @@ describe("tool.file_relations", () => {
   )
 
   it.instance(
+    "returns structured JSON fields instead of prose",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
+
+        expect(JSON.parse(result.output)).toEqual({
+          file: "packages/app/src/helper.ts",
+          package: "@fx/app",
+          imports: [],
+          exports: ["helper"],
+          dependents: { total: 1, files: ["packages/app/src/main.ts"] },
+        })
+        expect(result.title).toBe("packages/app/src/helper.ts")
+        expect(result.metadata).toMatchObject({ imports: 0, exports: 1, dependents: 1 })
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "lists dependents through relative, alias, and workspace imports",
     () =>
       Effect.gen(function* () {
