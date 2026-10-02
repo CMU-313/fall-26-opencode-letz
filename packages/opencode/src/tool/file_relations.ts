@@ -11,6 +11,8 @@ import * as Tool from "./tool"
 export const EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]
 export const DEPENDENT_LIMIT = 50
 const CANDIDATE_LIMIT = 5000
+// Specifiers that point at a directory's index without naming it: ".", "..", "./index", "../index.ts".
+const BARE_INDEX_SPECIFIER = /^\.\.?(\/(index(\.[cm]?[jt]sx?)?)?)?$/
 
 export const Parameters = Schema.Struct({
   filePath: Schema.String.annotate({
@@ -223,7 +225,7 @@ export const FileRelationsTool = Tool.define<typeof Parameters, Metadata, FSUtil
                 catch: (cause) => cause,
               }).pipe(Effect.catch(() => Effect.succeed([] as ReturnType<typeof scan>["imports"])))
               for (const item of imports) {
-                const bare = /^\.\.?(\/(index(\.[cm]?[jt]sx?)?)?)?$/.test(item.specifier)
+                const bare = BARE_INDEX_SPECIFIER.test(item.specifier)
                 if (!(index && bare) && !terms.some((term) => item.specifier.includes(term))) continue
                 const { resolved } = yield* classify(item.specifier, candidate)
                 if (resolved !== file) continue
