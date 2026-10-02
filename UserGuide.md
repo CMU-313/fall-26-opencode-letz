@@ -6,7 +6,7 @@
 
 `file_relations` is an agent tool that takes one JavaScript or TypeScript file and returns structured JSON with:
 
-- `imports`: each import, classified as `same-package` (relative paths, tsconfig aliases like `@/...`, or the file's own package name), `workspace` (another package in this monorepo), or `external` (npm packages and runtime built-ins), plus the resolved file when it can be found
+- `imports`: each import, classified as `same-package` (relative paths, tsconfig aliases like `@/...`, `#name` imports from package.json, or the file's own package name), `workspace` (another package in this monorepo), or `external` (npm packages and runtime built-ins), plus the resolved file when it can be found
 - `exports`: top-level runtime exports (const, function, class, default, `export * as`); type-only exports are left out
 - `dependents`: other files in the workspace that import this file, capped at 50 with a `truncated` marker like `...and 80 more (showing first 50)`
 
@@ -57,12 +57,13 @@ Run from `packages/opencode`:
 bun test test/tool/file_relations.test.ts test/tool/registry.test.ts
 ```
 
-- `test/tool/file_relations.test.ts` (21 tests) builds a small two-package monorepo in a temp directory and runs the real tool on it. It checks:
-  - each import kind (relative, tsconfig alias, workspace package through an `exports` map, npm, built-in, dynamic `import()`, `require()`)
+- `test/tool/file_relations.test.ts` (24 tests) builds a small two-package monorepo in a temp directory and runs the real tool on it. It checks:
+  - each import kind (relative, tsconfig alias, `#name` imports, workspace package through an `exports` map, npm, built-in, dynamic `import()`, `require()`)
+  - that the most specific tsconfig alias wins, as in TypeScript
   - that type-only imports and import-like text in comments or strings are ignored
   - each export form, and that type-only exports are left out
   - dependents found through relative, alias, workspace, `.`/`..`/`./index` imports, and that a file that only mentions the name is not counted
-  - the 50-dependent truncation marker, and the warning when the search hits its candidate cap
+  - the 50-dependent truncation marker, and the warning when the search hits its candidate cap or fails
   - the exact JSON shape of the output
   - errors for a missing path, a directory, and a non-JS/TS file
   - read and external-directory permission checks
@@ -72,10 +73,13 @@ bun test test/tool/file_relations.test.ts test/tool/registry.test.ts
 
 - Each acceptance criterion in issue #4 has at least one test, and the tests check exact results with `toEqual`, not just that something was returned.
 - The tests run the real tool, with the real parser and ripgrep, on real files, so import resolution and the dependent search are exercised end to end.
-- Edge cases found during review (index imports, shebang files, CommonJS, packages importing themselves, non-git projects) each have a regression test.
+- Edge cases found during review (index imports, shebang files, CommonJS, packages importing themselves, `#name` imports, non-git projects and `node_modules`) each have a regression test.
 - The flag tests show default agent behavior is unchanged unless the flag is on.
 
 ### Known limitations
 
 - Only JavaScript and TypeScript files are supported.
 - A dependent is missed when its import specifier does not contain the target file's name, for example a renamed `exports` subpath or an exact tsconfig alias.
+- Only `compilerOptions.paths` in the `tsconfig.json` next to `package.json` is read; `extends` is not followed.
+- An index file imported from two or more folders away (for example `"../.."`) is not found as a dependent.
+- CommonJS exports (`module.exports = ...`) are not listed; only ESM exports are.
