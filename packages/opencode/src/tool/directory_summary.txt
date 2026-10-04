@@ -7,10 +7,10 @@ Returns JSON with these fields:
 - importantFiles: files whose role is not plain source
 - subdirectories: immediate subdirectories (not scanned recursively)
 - relatedDirectories: other repository directories this directory imports from, with import counts and the files that import them
-- dependencies: one record per (file, target) with the specifier used and its kind: relative, alias (tsconfig "paths", e.g. "@/"), or workspace (a monorepo package linked through node_modules)
+- dependencies: one record per (file, target) with the specifier used and its kind: relative, alias (tsconfig "paths", e.g. "@/"), subpath (package.json "imports", e.g. "#db"), or workspace (a monorepo package, found through its node_modules link or the package.json "workspaces" globs)
 - externalPackages: third-party packages and runtime builtins that are imported
-- unresolvedImports: relative or alias imports whose target file could not be found
+- unresolvedImports: relative, alias, or subpath imports whose target file could not be found
 - skipped and truncated: anything that was not scanned, so you know when coverage is incomplete
 Only immediate JavaScript/TypeScript files are scanned. Type-only `import type` declarations are not counted. Imports between files inside the directory, including its subdirectories, are treated as internal and are not listed.
-Read permission is requested for the directory and for every file whose contents are read.
+Read permission is requested for the directory and for every file whose contents are read, including tsconfig.json and package.json files used for resolution.
 At most 200 entries and 1000 imports are processed and at most 200 dependency records are listed (relatedDirectories always counts every dependency found); source files larger than 256 KiB are skipped.

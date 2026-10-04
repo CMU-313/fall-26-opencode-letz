@@ -14,6 +14,18 @@ export const Parameters = Schema.Struct({
   }),
 })
 
+const Manifest = Schema.Struct({
+  name: Schema.optional(Schema.String),
+  exports: Schema.optional(Schema.Unknown),
+  imports: Schema.optional(Schema.Unknown),
+  workspaces: Schema.optional(
+    Schema.Union([
+      Schema.Array(Schema.String),
+      Schema.Struct({ packages: Schema.optional(Schema.Array(Schema.String)) }),
+    ]),
+  ),
+})
+
 const TsConfig = Schema.Struct({
   compilerOptions: Schema.optional(
     Schema.Struct({
@@ -35,7 +47,7 @@ const SOURCE_BYTES = 256 * 1024
 
 type Alias = { prefix: string; suffix: string; wildcard: boolean; targets: string[] }
 type Resolution =
-  | { type: "dependency"; kind: "relative" | "alias" | "workspace"; target: string; directory: string }
+  | { type: "dependency"; kind: "relative" | "alias" | "subpath" | "workspace"; target: string; directory: string }
   | { type: "external"; kind: "package" | "builtin"; name: string }
   | { type: "unresolved" }
 
@@ -44,11 +56,7 @@ export const DirectorySummaryTool = Tool.define(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
 
-    const readAliases = Effect.fn("DirectorySummaryTool.readAliases")(function* (directory: string, root: string) {
-      const config = (yield* fs
-        .findUp("tsconfig.json", directory, root)
-        .pipe(Effect.orElseSucceed(() => [] as string[])))[0]
-      if (!config) return [] as Alias[]
+    const readAliases = Effect.fn("DirectorySummaryTool.readAliases")(function* (config: string) {
       const text = yield* fs.readFileString(config).pipe(Effect.orElseSucceed(() => ""))
       const options = Option.getOrUndefined(
         Schema.decodeUnknownOption(TsConfig)(parse(text, [], { allowTrailingComma: true })),
@@ -86,8 +94,8 @@ export const DirectorySummaryTool = Tool.define(
           }
           const root = instance.worktree === "/" ? instance.directory : instance.worktree
           const relative = (file: string) => path.relative(root, file).split(path.sep).join("/") || "."
-          const ask = (file: string) =>
-            ctx.ask({ permission: "read", patterns: [relative(file)], always: ["*"], metadata: {} })
+          const ask = (...files: string[]) =>
+            ctx.ask({ permission: "read", patterns: files.map(relative), always: ["*"], metadata: {} })
           const inaccessible = () => Effect.fail(new Error(`Directory is not accessible: ${directory}`))
           yield* ask(directory)
 
@@ -134,7 +142,53 @@ export const DirectorySummaryTool = Tool.define(
             return undefined
           })
 
-          const aliases = yield* readAliases(directory, root)
+          const config = (yield* fs
+            .findUp("tsconfig.json", directory, root)
+            .pipe(Effect.orElseSucceed(() => [] as string[])))[0]
+          if (config) yield* ask(config)
+          const aliases = config ? yield* readAliases(config) : []
+          const manifests = (yield* fs
+            .findUp("package.json", directory, root)
+            .pipe(Effect.orElseSucceed(() => [] as string[]))).filter((file) => containsPath(file, instance))
+          const cache = new Map<string, Schema.Schema.Type<typeof Manifest> | undefined>()
+          // Callers ask for read permission before reading a manifest.
+          const readManifest = Effect.fnUntraced(function* (file: string) {
+            if (cache.has(file)) return cache.get(file)
+            const manifest = Option.getOrUndefined(
+              Schema.decodeUnknownOption(Manifest)(
+                yield* fs.readJson(file).pipe(Effect.orElseSucceed(() => undefined)),
+              ),
+            )
+            cache.set(file, manifest)
+            return manifest
+          })
+
+          // Maps package names to directories from the nearest package.json `workspaces` globs.
+          // Only consulted when a package has no node_modules link, e.g. before `bun install`.
+          const workspaces = yield* Effect.cached(
+            Effect.gen(function* () {
+              for (const file of manifests) {
+                yield* ask(file)
+                const globs = workspaceGlobs((yield* readManifest(file))?.workspaces)
+                if (globs.length === 0) continue
+                const found = (yield* Effect.forEach(globs, (glob) =>
+                  fs
+                    .glob(path.posix.join(glob, "package.json"), { cwd: path.dirname(file), absolute: true })
+                    .pipe(Effect.orElseSucceed(() => [] as string[])),
+                ))
+                  .flat()
+                  .map((item) => FSUtil.normalizePath(item))
+                  .filter((item) => containsPath(item, instance) && !item.split(path.sep).includes("node_modules"))
+                if (found.length > 0) yield* ask(...found)
+                const named = yield* Effect.forEach(found, (item) =>
+                  readManifest(item).pipe(Effect.map((manifest) => [manifest?.name, path.dirname(item)] as const)),
+                )
+                return new Map(named.filter((item): item is readonly [string, string] => item[0] !== undefined))
+              }
+              return new Map<string, string>()
+            }),
+          )
+
           const packages = new Map<string, { root: string; exports: unknown } | undefined>()
           const findPackage = Effect.fnUntraced(function* (name: string) {
             if (packages.has(name)) return packages.get(name)
@@ -143,7 +197,7 @@ export const DirectorySummaryTool = Tool.define(
               .pipe(Effect.orElseSucceed(() => [] as string[])))[0]
             const real = link
               ? FSUtil.normalizePath(yield* fs.realPath(link).pipe(Effect.orElseSucceed(() => link)))
-              : undefined
+              : (yield* workspaces).get(name)
             // Workspace packages are symlinked into node_modules from inside the repository;
             // installed third-party packages resolve to a real path that is still under node_modules.
             if (!real || !containsPath(real, instance) || real.split(path.sep).includes("node_modules")) {
@@ -152,8 +206,7 @@ export const DirectorySummaryTool = Tool.define(
             }
             const manifest = path.join(real, "package.json")
             yield* ask(manifest)
-            const pkg = yield* fs.readJson(manifest).pipe(Effect.orElseSucceed(() => undefined))
-            const found = { root: real, exports: isRecord(pkg) ? pkg.exports : undefined }
+            const found = { root: real, exports: (yield* readManifest(manifest))?.exports }
             packages.set(name, found)
             return found
           })
@@ -182,6 +235,16 @@ export const DirectorySummaryTool = Tool.define(
               }
               return { type: "unresolved" }
             }
+            // Subpath imports (`#name`) resolve through the `imports` field of the nearest package.json.
+            if (specifier.startsWith("#")) {
+              const file = manifests[0]
+              if (!file) return { type: "unresolved" }
+              yield* ask(file)
+              const entry = exportTarget((yield* readManifest(file))?.imports, specifier)
+              const target = entry ? yield* resolveModule(path.resolve(path.dirname(file), entry)) : undefined
+              if (!target) return { type: "unresolved" }
+              return { type: "dependency", kind: "subpath", target, directory: path.dirname(target) }
+            }
             if (specifier.startsWith("node:") || specifier.startsWith("bun:") || specifier === "bun") {
               return { type: "external", kind: "builtin", name: specifier }
             }
@@ -191,7 +254,7 @@ export const DirectorySummaryTool = Tool.define(
             const pkg = yield* findPackage(name)
             if (!pkg) return { type: "external", kind: "package", name }
             const subpath = specifier.slice(name.length + 1)
-            const entry = exportTarget(pkg.exports, subpath)
+            const entry = exportTarget(pkg.exports, subpath ? `./${subpath}` : ".")
             const target = yield* resolveModule(entry ? path.resolve(pkg.root, entry) : path.join(pkg.root, subpath))
             if (!target) return { type: "dependency", kind: "workspace", target: pkg.root, directory: pkg.root }
             return { type: "dependency", kind: "workspace", target, directory: path.dirname(target) }
@@ -360,9 +423,9 @@ function purpose(name: string, files: { name: string; role: string }[], subdirec
   return "Groups project files and subdirectories; no more specific purpose can be inferred."
 }
 
-// Resolves the subset of package.json `exports` used by workspace packages: exact keys, one `*` pattern, and conditions.
-function exportTarget(exports: unknown, subpath: string): string | undefined {
-  const key = subpath ? `./${subpath}` : "."
+// Resolves the subset of package.json `exports` and `imports` used in this repository: exact keys, one `*` pattern,
+// and conditions. `key` is "." or "./subpath" for exports and "#name" for imports.
+function exportTarget(exports: unknown, key: string): string | undefined {
   const map = typeof exports === "string" ? { ".": exports } : exports
   if (!isRecord(map)) return undefined
   if (key in map) return condition(map[key])
@@ -379,6 +442,11 @@ function condition(value: unknown): string | undefined {
   if (typeof value === "string") return value
   if (!isRecord(value)) return undefined
   return ["bun", "import", "default", "node", "require"].map((name) => condition(value[name])).find(Boolean)
+}
+
+function workspaceGlobs(workspaces: Schema.Schema.Type<typeof Manifest>["workspaces"]) {
+  const globs = (isRecord(workspaces) ? workspaces.packages : workspaces) ?? []
+  return globs.filter((glob) => !glob.startsWith("!"))
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
