@@ -101,11 +101,17 @@ export const DirectorySummaryTool = Tool.define(
           const entries = (yield* fs.readDirectoryEntries(directory).pipe(Effect.catch(inaccessible))).toSorted(
             (a, b) => a.name.localeCompare(b.name),
           )
+          // Purpose is inferred from every entry so a manifest past the listing limit still counts.
+          const all = {
+            files: entries
+              .filter((entry) => entry.type === "file")
+              .map((entry) => ({ name: entry.name, role: role(entry.name, path.basename(directory)) })),
+            subdirectories: entries.filter((entry) => entry.type === "directory").map((entry) => entry.name),
+          }
           const selected = entries.slice(0, ENTRY_LIMIT)
-          const files = selected
-            .filter((entry) => entry.type === "file")
-            .map((entry) => ({ name: entry.name, role: role(entry.name, path.basename(directory)) }))
-          const subdirectories = selected.filter((entry) => entry.type === "directory").map((entry) => entry.name)
+          const listed = new Set(selected.map((entry) => entry.name))
+          const files = all.files.filter((file) => listed.has(file.name))
+          const subdirectories = all.subdirectories.filter((name) => listed.has(name))
           const skipped = selected
             .filter((entry) => entry.type === "symlink")
             .map((entry) => ({ file: entry.name, reason: "Symbolic links are not scanned" }))
@@ -268,7 +274,7 @@ export const DirectorySummaryTool = Tool.define(
           const summary = {
             path: directory,
             relativePath: relative(directory),
-            purpose: purpose(path.basename(directory), files, subdirectories, entries.length),
+            purpose: purpose(path.basename(directory), all.files, all.subdirectories, entries.length),
             truncated: coverage.truncated || edges.length > DEPENDENCY_LIMIT,
             skipped,
             importantFiles: files
