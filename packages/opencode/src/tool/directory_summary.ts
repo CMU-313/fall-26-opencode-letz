@@ -303,7 +303,16 @@ function specifiers(file: string, source: string) {
   const loader = file.endsWith(".tsx") ? "tsx" : file.endsWith(".jsx") ? "jsx" : /\.[cm]?ts$/i.test(file) ? "ts" : "js"
   // Bun's scanner is a real parser, so comments, strings, and regex literals never produce false imports.
   // It omits `import type` declarations because they are erased at runtime.
-  return [...new Set(new Bun.Transpiler({ loader }).scanImports(source).map((item) => item.path))].toSorted()
+  // For JSX it also reports runtime imports it would inject (e.g. "react/jsx-dev-runtime"); those never
+  // appear quoted in the source, so they are dropped.
+  return [
+    ...new Set(
+      new Bun.Transpiler({ loader })
+        .scanImports(source)
+        .map((item) => item.path)
+        .filter((item) => ['"', "'", "`"].some((quote) => source.includes(quote + item + quote))),
+    ),
+  ].toSorted()
 }
 
 function related(edges: { file: string; directory: string }[]) {
