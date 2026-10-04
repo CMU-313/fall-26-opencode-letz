@@ -44,9 +44,9 @@ The tool is always available to the `build`, `plan`, and `explore` agents. You d
 
 The tool takes one parameter:
 
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `path` | string (required, non-empty) | The directory to summarize. Absolute, or relative to the directory OpenCode was started in. |
+| Parameter | Type                         | Description                                                                                 |
+| --------- | ---------------------------- | ------------------------------------------------------------------------------------------- |
+| `path`    | string (required, non-empty) | The directory to summarize. Absolute, or relative to the directory OpenCode was started in. |
 
 Example tool call: `{"path": "src/tool"}`
 
@@ -66,12 +66,12 @@ bun run --conditions=browser ./src/index.ts debug agent build \
 5. **Empty directory.** Run `mkdir src/tmp-empty`, then use `"path":"src/tmp-empty"`. `purpose` is `Empty directory; no purpose can be inferred.` and every list is empty. Remove the folder afterwards.
 6. **Invalid and rejected paths.** Error messages show on the last lines of output, so drop `2>/dev/null | jq ...` for these:
 
-| Try | Expected |
-| --- | --- |
-| `"path":"src/nope"` | `Directory not found: .../src/nope` |
-| `"path":"../../package.json"` | `Path is not a directory: .../package.json` |
-| `"path":"/tmp"` | `directory_summary path must be within the current workspace: ...` |
-| `{}` (no `path`) | `The directory_summary tool was called with invalid arguments ...` |
+| Try                           | Expected                                                           |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `"path":"src/nope"`           | `Directory not found: .../src/nope`                                |
+| `"path":"../../package.json"` | `Path is not a directory: .../package.json`                        |
+| `"path":"/tmp"`               | `directory_summary path must be within the current workspace: ...` |
+| `{}` (no `path`)              | `The directory_summary tool was called with invalid arguments ...` |
 
 (`jq` only pretty-prints the output. Without it, look at the `output` field of the printed JSON.)
 
@@ -98,15 +98,15 @@ bun test test/tool/directory_summary.test.ts test/tool/parameters.test.ts test/t
 
 - Each acceptance criterion in issue #9 has at least one test:
 
-  | Criterion | Tests |
-  | --- | --- |
-  | Valid directory paths | valid input |
-  | Important files and subdirectories | file roles, important files, subdirectories |
-  | Purpose description | purpose tests |
-  | Dependencies on other parts of the repository | dependency detection, counts |
-  | Structured output | exact JSON fields |
-  | Clear errors for nonexistent or inaccessible directories | error tests |
-  | Workspace permission checks | safety and permissions |
+  | Criterion                                                | Tests                                       |
+  | -------------------------------------------------------- | ------------------------------------------- |
+  | Valid directory paths                                    | valid input                                 |
+  | Important files and subdirectories                       | file roles, important files, subdirectories |
+  | Purpose description                                      | purpose tests                               |
+  | Dependencies on other parts of the repository            | dependency detection, counts                |
+  | Structured output                                        | exact JSON fields                           |
+  | Clear errors for nonexistent or inaccessible directories | error tests                                 |
+  | Workspace permission checks                              | safety and permissions                      |
 
 - The tests check exact results with `toEqual`, not just that something was returned. They run the real tool, with Bun's real parser, on real files and symlinks, so path resolution and permission checks run end to end. No mocks are used except the permission callback, which records or denies requests.
 - Every bug fixed in Sprint 2 has a regression test that fails on the Sprint 1 code: `#name` imports listed as npm packages, phantom `react` imports from JSX files, workspace packages listed as external before `bun install`, purpose ignoring a `package.json` past the 200-entry limit, and `tsconfig.json` read without asking permission.
