@@ -60,6 +60,18 @@ const failure = Effect.fn("DirectorySummaryTest.failure")(function* (directory: 
   throw new Error("Expected failure")
 })
 
+const recording = () => {
+  const requests: Parameters<Tool.Context["ask"]>[0][] = []
+  const context: Tool.Context = {
+    ...ctx,
+    ask: (request) =>
+      Effect.sync(() => {
+        requests.push(request)
+      }),
+  }
+  return { context, patterns: () => requests.map((request) => request.patterns) }
+}
+
 const write = Effect.fn("DirectorySummaryTest.write")(function* (files: Record<string, string>) {
   const test = yield* TestInstance
   const fs = yield* FSUtil.Service
@@ -154,6 +166,24 @@ describe("tool.directory_summary", () => {
     Effect.gen(function* () {
       yield* write({ "file.txt": "text" })
       expect(yield* failure("file.txt")).toContain("Path is not a directory:")
+    }),
+  )
+
+  it.instance("rejects malformed input before asking for permission or reading files", () =>
+    Effect.gen(function* () {
+      const info = yield* DirectorySummaryTool
+      const tool = yield* info.init()
+      const execute = tool.execute as unknown as (args: unknown, ctx: Tool.Context) => ReturnType<typeof tool.execute>
+      const record = recording()
+      for (const input of [{}, { path: "" }, { path: 42 }, null]) {
+        const exit = yield* execute(input, record.context).pipe(Effect.exit)
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (!Exit.isFailure(exit)) continue
+        const error = exit.cause.reasons.find(Cause.isDieReason)?.defect
+        expect(error).toBeInstanceOf(Tool.InvalidArgumentsError)
+        expect(String(error)).toContain("directory_summary tool was called with invalid arguments")
+      }
+      expect(record.patterns()).toEqual([])
     }),
   )
 
@@ -288,7 +318,9 @@ describe("tool.directory_summary", () => {
           'import { gone } from "@/missing/thing"',
         ].join("\n"),
       })
-      const summary = yield* summarize("src/feature")
+      const record = recording()
+      const summary: Summary = JSON.parse((yield* run("src/feature", record.context)).output)
+      expect(record.patterns()).toContainEqual(["tsconfig.json"])
       expect(summary.dependencies).toEqual([
         {
           file: "index.ts",
@@ -340,6 +372,139 @@ describe("tool.directory_summary", () => {
     }),
   )
 
+  it.instance("resolves package.json subpath imports such as #name", () =>
+    Effect.gen(function* () {
+      yield* write({
+        "package.json": JSON.stringify({
+          name: "app",
+          imports: {
+            "#db": { bun: "./src/db/db.bun.ts", node: "./src/db/db.node.ts" },
+            "#util/*": "./src/util/*.ts",
+          },
+        }),
+        "src/db/db.bun.ts": "export const db = 1",
+        "src/util/format.ts": "export const format = 1",
+        "src/feature/index.ts": [
+          'import { db } from "#db"',
+          'import { format } from "#util/format"',
+          'import { gone } from "#missing"',
+        ].join("\n"),
+        // #db resolves into src/db, so summarizing that directory treats the import as internal.
+        "src/db/index.ts": 'export * from "#db"',
+      })
+      const record = recording()
+      const summary: Summary = JSON.parse((yield* run("src/feature", record.context)).output)
+      expect(summary.dependencies).toEqual([
+        { file: "index.ts", specifier: "#db", kind: "subpath", target: "src/db/db.bun.ts", directory: "src/db" },
+        {
+          file: "index.ts",
+          specifier: "#util/format",
+          kind: "subpath",
+          target: "src/util/format.ts",
+          directory: "src/util",
+        },
+      ])
+      expect(summary.unresolvedImports).toEqual([{ file: "index.ts", specifier: "#missing" }])
+      expect(summary.externalPackages).toEqual([])
+      expect(record.patterns()).toContainEqual(["package.json"])
+      const db = yield* summarize("src/db")
+      expect(db.dependencies).toEqual([])
+      expect(db.externalPackages).toEqual([])
+    }),
+  )
+
+  it.instance("finds workspace packages from package.json workspaces when they are not linked", () =>
+    Effect.gen(function* () {
+      yield* write({
+        "package.json": JSON.stringify({ name: "root", workspaces: { packages: ["packages/*", "!packages/ignored"] } }),
+        "packages/lib/package.json": JSON.stringify({
+          name: "@acme/lib",
+          exports: { ".": { types: "./src/index.d.ts", import: "./src/index.ts" } },
+        }),
+        "packages/lib/src/index.ts": "export const lib = 1",
+        "packages/app/a.ts": ['import { lib } from "@acme/lib"', 'import pad from "left-pad"'].join("\n"),
+        "packages/app/b.ts": ['import { lib } from "@acme/lib"', 'import pad from "left-pad"'].join("\n"),
+      })
+      const summary = yield* summarize("packages/app")
+      expect(summary.dependencies).toEqual([
+        {
+          file: "a.ts",
+          specifier: "@acme/lib",
+          kind: "workspace",
+          target: "packages/lib/src/index.ts",
+          directory: "packages/lib/src",
+        },
+        {
+          file: "b.ts",
+          specifier: "@acme/lib",
+          kind: "workspace",
+          target: "packages/lib/src/index.ts",
+          directory: "packages/lib/src",
+        },
+      ])
+      expect(summary.relatedDirectories).toEqual([
+        { directory: "packages/lib/src", imports: 2, files: ["a.ts", "b.ts"] },
+      ])
+      expect(summary.externalPackages).toEqual([{ name: "left-pad", kind: "package", files: ["a.ts", "b.ts"] }])
+    }),
+  )
+
+  it.instance("ignores block comments, template literals, type-only imports, and injected JSX runtime imports", () =>
+    Effect.gen(function* () {
+      yield* write({
+        "shared/value.ts": "export const value = 1",
+        "shared/types.ts": "export type Value = number",
+        "module/view.tsx": [
+          'import { value } from "../shared/value"',
+          'import type { Value } from "../shared/types"',
+          '/* import fake from "../fake/block" */',
+          "const text = `import fake from '../fake/template'`",
+          "export const View = () => <div title=\"import x from '../fake/jsx'\">{value}</div>",
+        ].join("\n"),
+      })
+      const summary = yield* summarize("module")
+      expect(summary.dependencies).toEqual([
+        {
+          file: "view.tsx",
+          specifier: "../shared/value",
+          kind: "relative",
+          target: "shared/value.ts",
+          directory: "shared",
+        },
+      ])
+      // Bun's scanner reports "react/jsx-dev-runtime" for any JSX even though the file never imports React.
+      expect(summary.externalPackages).toEqual([])
+      expect(summary.unresolvedImports).toEqual([])
+      expect(summary.skipped).toEqual([])
+    }),
+  )
+
+  it.instance("reports sources whose imports cannot be parsed and still scans the rest", () =>
+    Effect.gen(function* () {
+      yield* write({
+        "shared/value.ts": "",
+        "module/broken.ts": 'import { from "../shared/value"',
+        "module/ok.ts": 'import "../shared/value"',
+      })
+      const summary = yield* summarize("module")
+      expect(summary.skipped).toEqual([{ file: "broken.ts", reason: "Imports could not be parsed" }])
+      expect(summary.dependencies.map((item) => item.file)).toEqual(["ok.ts"])
+    }),
+  )
+
+  it.instance("lists symbolic links as skipped instead of following them", () =>
+    Effect.gen(function* () {
+      if (process.platform === "win32") return
+      const directory = yield* write({ "shared/value.ts": 'import pad from "left-pad"', "module/index.ts": "" })
+      const fs = yield* FSUtil.Service
+      yield* fs.symlink(path.join(directory, "shared", "value.ts"), path.join(directory, "module", "link.ts"))
+      const summary = yield* summarize("module")
+      expect(summary.files).toEqual([{ name: "index.ts", role: "entry point" }])
+      expect(summary.skipped).toEqual([{ file: "link.ts", reason: "Symbolic links are not scanned" }])
+      expect(summary.externalPackages).toEqual([])
+    }),
+  )
+
   it.instance("infers purpose from the balance of files and from subdirectories", () =>
     Effect.gen(function* () {
       yield* write({
@@ -364,6 +529,8 @@ describe("tool.directory_summary", () => {
       yield* write({
         "module/large.ts": " ".repeat(256 * 1024 + 1),
         ...Object.fromEntries(Array.from({ length: 205 }, (_, i) => [`many/${String(i).padStart(3, "0")}.md`, ""])),
+        // Sorts after the numbered files, so it falls outside the 200 listed entries.
+        "many/package.json": "{}",
       })
       const result = yield* run("module")
       const large: Summary = JSON.parse(result.output)
@@ -372,6 +539,8 @@ describe("tool.directory_summary", () => {
       expect(large.skipped).toEqual([{ file: "large.ts", reason: "Source exceeds 256 KiB scan limit" }])
       const many = yield* summarize("many")
       expect(many.files).toHaveLength(200)
+      expect(many.files.map((file) => file.name)).not.toContain("package.json")
+      expect(many.purpose).toContain("package or project root")
       expect(many.truncated).toBe(true)
     }),
   )
