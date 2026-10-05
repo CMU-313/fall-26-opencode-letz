@@ -16,12 +16,14 @@ It is behind a feature flag, so the agent does not see the tool unless the flag 
 
 1. Install dependencies from the repo root: `bun install`
 2. Turn the flag on by setting `OPENCODE_EXPERIMENTAL_FILE_RELATIONS=true` (setting `OPENCODE_EXPERIMENTAL=true` also turns it on).
-3. Start opencode with the flag set and ask the agent about a file, for example "Use file_relations on packages/opencode/src/tool/glob.ts":
+3. Start opencode with the flag set and ask the agent about a file, for example "Use file_relations on src/tool/glob.ts":
 
    ```sh
    cd packages/opencode
    OPENCODE_EXPERIMENTAL_FILE_RELATIONS=true bun run dev
    ```
+
+   Chatting needs a connected model provider (`/connect`). The default free model returns "OpenCode's free tier can only be used from within OpenCode" in a dev build. To test without a model or API key, use the `debug agent` command below.
 
 ### How to user test it
 
