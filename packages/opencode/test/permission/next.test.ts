@@ -481,6 +481,21 @@ test("disabled - disables edit/write/apply_patch when edit denied", () => {
   expect(result.has("bash")).toBe(false)
 })
 
+test("disabled - treats file_relations as a read tool", () => {
+  const readOnly = Permission.disabled(
+    ["file_relations", "bash"],
+    [
+      { permission: "*", pattern: "*", action: "deny" },
+      { permission: "read", pattern: "*", action: "allow" },
+    ],
+  )
+  expect(readOnly.has("file_relations")).toBe(false)
+  expect(readOnly.has("bash")).toBe(true)
+
+  const noReads = Permission.disabled(["file_relations"], [{ permission: "read", pattern: "*", action: "deny" }])
+  expect(noReads.has("file_relations")).toBe(true)
+})
+
 test("disabled - does not disable when partially denied", () => {
   const result = Permission.disabled(
     ["bash"],
