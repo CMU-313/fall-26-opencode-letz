@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Agent } from "../../src/agent/agent"
+import { InstanceState } from "../../src/effect/instance-state"
 import { MessageID, SessionID } from "../../src/session/schema"
 import {
   MAX_COLLECTION_ITEMS,
@@ -165,6 +166,35 @@ describe("tool.repository_overview", () => {
       expect(result.metadata.overview.truncated).toBe(true)
       expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
       expect((yield* tool.execute({}, ctx)).output).toBe(result.output)
+    }),
+  )
+
+  it.instance("reads package metadata even when package.json falls outside the bounded root listing", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* Effect.forEach(
+        Array.from({ length: MAX_COLLECTION_ITEMS + 5 }, (_, index) => `aaa-${String(index).padStart(3, "0")}`),
+        (name) => fs.ensureDir(path.join(test.directory, name)),
+      )
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        name: "metadata-survives-truncation",
+        packageManager: "bun@1.4.2",
+        dependencies: { react: "^19" },
+      })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.package).toEqual({ name: "metadata-survives-truncation" })
+      expect(result.metadata.overview.packageManager).toEqual({
+        name: "bun",
+        version: "1.4.2",
+        source: "package.json#packageManager",
+      })
+      expect(result.metadata.overview.frameworks).toContain("React")
+      expect(result.metadata.overview.truncated).toBe(true)
+      expect(result.metadata.overview.truncationReasons).toContain("folders")
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
     }),
   )
 
@@ -363,6 +393,75 @@ describe("tool.repository_overview", () => {
         { path: "packages/a", name: null },
         { path: "packages/b", name: null },
       ])
+    }),
+  )
+
+  it.instance("continues collecting workspace information when one workspace package.json is malformed", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        name: "root",
+        workspaces: ["packages/*"],
+      })
+      yield* Effect.forEach(["packages/good", "packages/broken"], (directory) =>
+        fs.ensureDir(path.join(test.directory, directory)),
+      )
+      yield* fs.writeJson(path.join(test.directory, "packages/good/package.json"), {
+        name: "@example/good",
+        dependencies: { vue: "^3" },
+      })
+      yield* fs.writeFileString(path.join(test.directory, "packages/good/index.ts"), "")
+      yield* fs.writeFileString(path.join(test.directory, "packages/broken/package.json"), "{broken")
+      yield* fs.writeFileString(path.join(test.directory, "packages/broken/main.py"), "")
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.workspaces).toEqual([
+        { path: "packages/broken", name: null },
+        { path: "packages/good", name: "@example/good" },
+      ])
+      expect(result.metadata.overview.languages).toEqual(["Python", "TypeScript"])
+      expect(result.metadata.overview.frameworks).toEqual(["Vue"])
+      expect(result.metadata.overview.package).toEqual({ name: "root" })
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+    }),
+  )
+
+  it.instance("requests read permission for root and workspace package metadata", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      const requests: Parameters<Tool.Context["ask"]>[0][] = []
+      const instance = yield* InstanceState.context
+      const context = {
+        ...ctx,
+        ask: (input) =>
+          Effect.sync(() => {
+            requests.push(input)
+          }),
+      } satisfies Tool.Context
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        name: "root",
+        workspaces: ["packages/*"],
+      })
+      yield* fs.ensureDir(path.join(test.directory, "packages/app"))
+      yield* fs.writeJson(path.join(test.directory, "packages/app/package.json"), {
+        name: "@example/app",
+        dependencies: { react: "^19" },
+      })
+      yield* fs.writeFileString(path.join(test.directory, "packages/app/index.ts"), "")
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, context)
+      expect(requests.filter((request) => request.permission === "read").map((request) => request.patterns)).toEqual([
+        [path.relative(instance.worktree, path.join(test.directory, "package.json"))],
+        [path.relative(instance.worktree, path.join(test.directory, "packages/app/package.json"))],
+      ])
+      expect(result.metadata.overview.package).toEqual({ name: "root" })
+      expect(result.metadata.overview.workspaces).toEqual([{ path: "packages/app", name: "@example/app" }])
+      expect(result.metadata.overview.frameworks).toContain("React")
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
     }),
   )
 
