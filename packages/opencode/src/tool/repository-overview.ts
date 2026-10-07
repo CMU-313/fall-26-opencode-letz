@@ -113,6 +113,22 @@ export const RepositoryOverviewTool = Tool.define(
       execute: (_params, ctx) =>
         Effect.gen(function* () {
           const instance = yield* InstanceState.context
+          const readPackageMetadata = (directory: string) => {
+            const file = path.join(directory, "package.json")
+            return Effect.gen(function* () {
+              yield* ctx.ask({
+                permission: "read",
+                patterns: [path.relative(instance.worktree, file)],
+                always: ["*"],
+                metadata: { path: file },
+              })
+              return yield* fs.readJson(file).pipe(
+                Effect.map(Schema.decodeUnknownOption(PackageMetadata)),
+                Effect.map(Option.getOrNull),
+                Effect.catch(() => Effect.succeed(null)),
+              )
+            })
+          }
           const reasons = new Set<string>()
           const bounded = <T>(items: T[], field: string) => {
             if (items.length > MAX_COLLECTION_ITEMS) reasons.add(field)
@@ -130,19 +146,7 @@ export const RepositoryOverviewTool = Tool.define(
           })
           const entries = yield* fs.readDirectoryEntries(instance.directory)
           const manifest = entries.some((entry) => entry.type === "file" && entry.name === "package.json")
-            ? yield* Effect.gen(function* () {
-                yield* ctx.ask({
-                  permission: "read",
-                  patterns: [path.relative(instance.worktree, path.join(instance.directory, "package.json"))],
-                  always: ["*"],
-                  metadata: { path: path.join(instance.directory, "package.json") },
-                })
-                return yield* fs.readJson(path.join(instance.directory, "package.json")).pipe(
-                  Effect.map(Schema.decodeUnknownOption(PackageMetadata)),
-                  Effect.map(Option.getOrNull),
-                  Effect.catch(() => Effect.succeed(null)),
-                )
-              })
+            ? yield* readPackageMetadata(instance.directory)
             : null
           const explicit =
             typeof manifest?.packageManager === "string"
@@ -187,20 +191,7 @@ export const RepositoryOverviewTool = Tool.define(
               Effect.gen(function* () {
                 const files = yield* fs.readDirectoryEntries(directory).pipe(Effect.catch(() => Effect.succeed([])))
                 const child = files.some((entry) => entry.type === "file" && entry.name === "package.json")
-                  ? yield* Effect.gen(function* () {
-                      const file = path.join(directory, "package.json")
-                      yield* ctx.ask({
-                        permission: "read",
-                        patterns: [path.relative(instance.worktree, file)],
-                        always: ["*"],
-                        metadata: { path: file },
-                      })
-                      return yield* fs.readJson(file).pipe(
-                        Effect.map(Schema.decodeUnknownOption(PackageMetadata)),
-                        Effect.map(Option.getOrNull),
-                        Effect.catch(() => Effect.succeed(null)),
-                      )
-                    })
+                  ? yield* readPackageMetadata(directory)
                   : null
                 return {
                   path: path.relative(instance.directory, directory).split(path.sep).join("/"),
