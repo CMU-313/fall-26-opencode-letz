@@ -14,7 +14,7 @@ import {
 } from "../../src/tool/repository-overview"
 import { Tool } from "../../src/tool/tool"
 import { Truncate } from "../../src/tool/truncate"
-import { TestInstance } from "../fixture/fixture"
+import { TestInstance, provideInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(LayerNode.compile(LayerNode.group([FSUtil.node, Truncate.node, Agent.node])))
@@ -30,6 +30,41 @@ const ctx = {
 } satisfies Tool.Context
 
 describe("tool.repository_overview", () => {
+  it.instance(
+    "uses the current workspace directory instead of walking up to the repository root",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        const directory = path.join(test.directory, "packages/app")
+        yield* fs.writeJson(path.join(test.directory, "package.json"), {
+          name: "root-repo",
+          dependencies: { react: "^19" },
+        })
+        yield* fs.ensureDir(path.join(directory, "src"))
+        yield* fs.writeJson(path.join(directory, "package.json"), {
+          name: "@example/app",
+          dependencies: { vue: "^3" },
+        })
+        yield* fs.writeFileString(path.join(directory, "src/index.ts"), "")
+        const result = yield* Effect.gen(function* () {
+          const info = yield* RepositoryOverviewTool
+          const tool = yield* info.init()
+          return yield* tool.execute({}, ctx)
+        }).pipe(provideInstance(directory))
+        expect(result.metadata.overview.root).toBe(directory)
+        expect(result.metadata.overview.name).toBe("app")
+        expect(result.metadata.overview.package).toEqual({ name: "@example/app" })
+        expect(result.metadata.overview.frameworks).toContain("Vue")
+        expect(result.metadata.overview.frameworks).not.toContain("React")
+        expect(result.metadata.overview.folders).toEqual(["src"])
+        expect(result.metadata.overview.workspaces).toEqual([])
+        expect(result.output).not.toContain("root-repo")
+        expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+      }),
+    { git: true },
+  )
+
   it.instance("reports folders and important files in a normal repository", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
