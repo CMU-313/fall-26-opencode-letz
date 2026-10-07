@@ -141,6 +141,13 @@ describe("tool.registry", () => {
         truncationReasons: [],
       })
       expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+        }),
+  )
+  
+  it.instance("exposes directory_summary", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("directory_summary")
     }),
   )
 

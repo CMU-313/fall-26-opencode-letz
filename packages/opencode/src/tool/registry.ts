@@ -11,6 +11,7 @@ import { RepositoryOverviewTool } from "./repository-overview"
 import { FileRelationsTool } from "./file_relations" 
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
+import { DirectorySummaryTool } from "./directory_summary"
 import { TaskTool } from "./task"
 import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
@@ -98,6 +99,7 @@ const layer = Layer.effect(
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
     const read = yield* ReadTool
+    const directorySummary = yield* DirectorySummaryTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
@@ -209,6 +211,7 @@ const layer = Layer.effect(
           invalid: Tool.init(invalid),
           shell: Tool.init(shell),
           read: Tool.init(read),
+          directorySummary: Tool.init(directorySummary),
           glob: Tool.init(globtool),
           repositoryOverview: Tool.init(repositoryOverview),
           grep: Tool.init(greptool),
@@ -234,6 +237,7 @@ const layer = Layer.effect(
             ...(questionEnabled ? [tool.question] : []),
             tool.shell,
             tool.read,
+            tool.directorySummary,
             tool.glob,
             tool.repositoryOverview,
             tool.grep,
