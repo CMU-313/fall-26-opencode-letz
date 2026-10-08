@@ -88,6 +88,104 @@ bun test test/tool/file_relations.test.ts test/tool/registry.test.ts
 - An index file imported from two or more folders away (for example `"../.."`) is not found as a dependent.
 - CommonJS exports (`module.exports = ...`) are not listed; only ESM exports are.
 
+## Repository overview tool (Lynsey Li, issue #7)
+
+### What it does
+
+`repository_overview` gives a high-level summary of the current repository so users can quickly understand its structure and technologies without manually inspecting many files.
+
+The overview includes:
+
+- the repository root and repository name
+- important top-level folders and files
+- package metadata such as the package name and package manager
+- detected programming languages and frameworks
+- workspace/package information for monorepos
+- truncation information when a repository is too large to summarize completely
+
+The output is structured JSON and is bounded so that very large repositories do not generate excessively large results.
+
+The feature is also available through the `/repository-overview` built-in slash command, which asks the agent to run the existing `repository_overview` tool for the current repository.
+
+### How to use it
+
+1. Install dependencies from the repository root:
+
+   ```sh
+   bun install
+   ```
+   
+2. Start OpenCode:
+
+   ```sh
+   cd packages/opencode
+   bun run dev
+   ```
+   
+3. In OpenCode, run:
+
+   ```text
+   /repository-overview
+   ```
+
+The command takes no arguments and requests an overview of the repository associated with the current session.
+
+### How to user test it
+
+Start OpenCode from `packages/opencode`:
+
+```sh
+bun run dev
+```
+
+Then enter:
+
+```text
+/repository-overview
+```
+
+Verify that the command is available without arguments and produces a repository summary containing information such as the repository name, root, folders, important files, detected technologies, package metadata, and workspace information when applicable.
+
+The underlying tool can also be tested directly:
+
+```sh
+bun run --conditions=browser ./src/index.ts debug agent build \
+  --tool repository_overview --params '{}'
+```
+
+The result should contain structured JSON representing the current repository.
+
+
+### Automated tests
+
+Run from `packages/opencode`:
+
+```sh
+bun test test/tool/repository-overview.test.ts
+bun test test/tool/registry.test.ts
+bun test test/session/prompt.test.ts
+```
+
+- `test/tool/repository-overview.test.ts` contains 35 tests covering repository structure, important files, package metadata, package-manager detection, language and framework detection, workspace discovery, malformed workspace declarations, deterministic ordering, generated-directory and symlink exclusion, output bounds, and truncation behavior.
+- `test/tool/registry.test.ts` verifies that `repository_overview` is registered as a built-in tool, can be executed through the registry, and returns the expected structured output.
+- `test/session/prompt.test.ts` verifies that `/repository-overview` is discoverable as an argument-free built-in command and that invoking it successfully executes the existing `repository_overview` tool in the current session.
+
+### Why these tests are sufficient
+
+- The core tests cover the major repository information required by the feature, including repository structure, technologies, package metadata, and workspaces.
+- Boundary tests verify that large repositories remain bounded while still returning valid structured output and reporting truncation.
+- Negative cases verify that malformed metadata, unsafe workspace patterns, generated directories, symlinks, and weak technology evidence do not produce incorrect results.
+- The registry test verifies that the tool is actually exposed and executable through OpenCode.
+- The command tests verify the complete user-facing path from `/repository-overview` discovery through tool execution.
+- Together, the tests cover both the repository-analysis logic and the user-facing integration required by issue #7.
+
+### Known limitations
+
+- The overview is intentionally high-level rather than a complete inventory of every repository file.
+- Large collections, workspace searches, and text fields are bounded; when limits are reached, the result reports truncation instead of returning unlimited output.
+- Technology detection relies on supported source-file extensions, package metadata, dependency names, and recognized build configuration files rather than analyzing arbitrary source text.
+- Generated directories and symlink-based evidence are intentionally ignored to keep the overview focused on the repository's actual source structure.
+
 ## Directory Summary Tool (Tiffany Liu, issue #9)
 
 ### What it does
@@ -166,7 +264,6 @@ bun run --conditions=browser ./src/index.ts debug agent build \
 ### Automated tests
 
 Run from `packages/opencode`:
-
 ```sh
 bun test test/tool/directory_summary.test.ts test/tool/parameters.test.ts test/tool/registry.test.ts
 ```

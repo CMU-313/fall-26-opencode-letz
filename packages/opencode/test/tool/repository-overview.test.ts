@@ -1,0 +1,692 @@
+import { describe, expect } from "bun:test"
+import path from "path"
+import { Effect } from "effect"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { Agent } from "../../src/agent/agent"
+import { InstanceState } from "../../src/effect/instance-state"
+import { MessageID, SessionID } from "../../src/session/schema"
+import {
+  MAX_COLLECTION_ITEMS,
+  MAX_OUTPUT_BYTES,
+  MAX_TEXT_LENGTH,
+  RepositoryOverviewTool,
+} from "../../src/tool/repository-overview"
+import { Tool } from "../../src/tool/tool"
+import { Truncate } from "../../src/tool/truncate"
+import { TestInstance, provideInstance } from "../fixture/fixture"
+import { testEffect } from "../lib/effect"
+
+const it = testEffect(LayerNode.compile(LayerNode.group([FSUtil.node, Truncate.node, Agent.node])))
+
+const ctx = {
+  sessionID: SessionID.make("ses_test"),
+  messageID: MessageID.make("msg_test"),
+  agent: "build",
+  abort: AbortSignal.any([]),
+  messages: [],
+  metadata: () => Effect.void,
+  ask: () => Effect.void,
+} satisfies Tool.Context
+
+describe("tool.repository_overview", () => {
+  it.instance(
+    "uses the current workspace directory instead of walking up to the repository root",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        const directory = path.join(test.directory, "packages/app")
+        yield* fs.writeJson(path.join(test.directory, "package.json"), {
+          name: "root-repo",
+          dependencies: { react: "^19" },
+        })
+        yield* fs.ensureDir(path.join(directory, "src"))
+        yield* fs.writeJson(path.join(directory, "package.json"), {
+          name: "@example/app",
+          dependencies: { vue: "^3" },
+        })
+        yield* fs.writeFileString(path.join(directory, "src/index.ts"), "")
+        const result = yield* Effect.gen(function* () {
+          const info = yield* RepositoryOverviewTool
+          const tool = yield* info.init()
+          return yield* tool.execute({}, ctx)
+        }).pipe(provideInstance(directory))
+        expect(result.metadata.overview.root).toBe(directory)
+        expect(result.metadata.overview.name).toBe("app")
+        expect(result.metadata.overview.package).toEqual({ name: "@example/app" })
+        expect(result.metadata.overview.frameworks).toContain("Vue")
+        expect(result.metadata.overview.frameworks).not.toContain("React")
+        expect(result.metadata.overview.folders).toEqual(["src"])
+        expect(result.metadata.overview.workspaces).toEqual([])
+        expect(result.output).not.toContain("root-repo")
+        expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+      }),
+    { git: true },
+  )
+
+  it.instance("reports folders and important files in a normal repository", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* Effect.forEach(["src", "packages", "node_modules"], (name) =>
+        fs.ensureDir(path.join(test.directory, name)),
+      )
+      yield* Effect.forEach(["README.md", "package.json", "tsconfig.json", "notes.txt"], (name) =>
+        fs.writeFileString(path.join(test.directory, name), ""),
+      )
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(JSON.parse(result.output)).toEqual({
+        root: test.directory,
+        name: path.basename(test.directory),
+        package: null,
+        packageManager: null,
+        folders: ["packages", "src"],
+        languages: ["TypeScript"],
+        frameworks: [],
+        workspaces: [],
+        workspacePatterns: [],
+        importantFiles: [
+          { path: "README.md", kind: "readme" },
+          { path: "package.json", kind: "manifest" },
+          { path: "tsconfig.json", kind: "config" },
+        ],
+        truncated: false,
+        truncationReasons: [],
+      })
+      expect(result.metadata.overview).toEqual(JSON.parse(result.output))
+      expect(result.metadata.truncated).toBe(false)
+      expect(result.title).toBe("Repository overview")
+    }),
+  )
+
+  it.instance("returns structured empty lists for a minimal repository", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.writeFileString(path.join(test.directory, "notes.txt"), "notes")
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(JSON.parse(result.output)).toEqual({
+        root: test.directory,
+        name: path.basename(test.directory),
+        package: null,
+        packageManager: null,
+        folders: [],
+        languages: [],
+        frameworks: [],
+        workspaces: [],
+        workspacePatterns: [],
+        importantFiles: [],
+        truncated: false,
+        truncationReasons: [],
+      })
+      expect(result.metadata.overview).toEqual(JSON.parse(result.output))
+    }),
+  )
+
+  it.instance("detects Java from each build configuration at root and workspace roots without source files", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.writeJson(path.join(test.directory, "package.json"), { workspaces: ["packages/app"] })
+      yield* fs.ensureDir(path.join(test.directory, "packages/app"))
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      yield* Effect.forEach([".", "packages/app"], (directory) =>
+        Effect.forEach(["pom.xml", "build.gradle", "build.gradle.kts"], (name) =>
+          Effect.gen(function* () {
+            const file = path.join(test.directory, directory, name)
+            yield* fs.writeFileString(file, "")
+            const result = yield* tool.execute({}, ctx)
+            expect(result.metadata.overview.languages).toEqual(["Java"])
+            yield* fs.remove(file)
+          }),
+        ),
+      )
+    }),
+  )
+
+  it.instance("preserves collections and scalar text exactly at their limits without truncation", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      const patterns = Array.from(
+        { length: MAX_COLLECTION_ITEMS },
+        (_, index) => `package-${String(index).padStart(3, "0")}`,
+      )
+      const name = "名".repeat(MAX_TEXT_LENGTH)
+      yield* fs.writeJson(path.join(test.directory, "package.json"), { name, workspaces: patterns })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.workspacePatterns).toEqual(patterns)
+      expect(result.metadata.overview.package?.name).toBe(name)
+      expect(result.metadata.overview.truncationReasons).toEqual([])
+      expect(result.metadata.overview.truncated).toBe(false)
+      expect(result.metadata.truncated).toBe(false)
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+    }),
+  )
+
+  it.instance("limits sorted root collections, excludes generated folders, and repeats deterministically", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      const names = Array.from(
+        { length: MAX_COLLECTION_ITEMS + 2 },
+        (_, index) => `item-${String(index).padStart(3, "0")}`,
+      )
+      yield* Effect.forEach(names.toReversed(), (name) =>
+        Effect.gen(function* () {
+          yield* fs.ensureDir(path.join(test.directory, name))
+          yield* fs.writeFileString(path.join(test.directory, `README-${name}`), "")
+        }),
+      )
+      yield* Effect.forEach(["node_modules", ".git", "build", "dist", "coverage"], (name) =>
+        fs.ensureDir(path.join(test.directory, name)),
+      )
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.folders).toEqual(names.slice(0, MAX_COLLECTION_ITEMS))
+      expect(result.metadata.overview.importantFiles.map((file) => file.path)).toEqual(
+        names.slice(0, MAX_COLLECTION_ITEMS).map((name) => `README-${name}`),
+      )
+      expect(result.metadata.overview.truncationReasons).toEqual(["folders", "importantFiles"])
+      expect(result.metadata.truncated).toBe(true)
+      expect(result.metadata.overview.truncated).toBe(true)
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+      expect((yield* tool.execute({}, ctx)).output).toBe(result.output)
+    }),
+  )
+
+  it.instance("reads package metadata even when package.json falls outside the bounded root listing", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* Effect.forEach(
+        Array.from({ length: MAX_COLLECTION_ITEMS + 5 }, (_, index) => `aaa-${String(index).padStart(3, "0")}`),
+        (name) => fs.ensureDir(path.join(test.directory, name)),
+      )
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        name: "metadata-survives-truncation",
+        packageManager: "bun@1.4.2",
+        dependencies: { react: "^19" },
+      })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.package).toEqual({ name: "metadata-survives-truncation" })
+      expect(result.metadata.overview.packageManager).toEqual({
+        name: "bun",
+        version: "1.4.2",
+        source: "package.json#packageManager",
+      })
+      expect(result.metadata.overview.frameworks).toContain("React")
+      expect(result.metadata.overview.truncated).toBe(true)
+      expect(result.metadata.overview.truncationReasons).toContain("folders")
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+    }),
+  )
+
+  it.instance("limits many matching workspaces to a deterministic sorted subset", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      const names = Array.from(
+        { length: MAX_COLLECTION_ITEMS + 2 },
+        (_, index) => `packages/item-${String(index).padStart(3, "0")}`,
+      )
+      yield* Effect.forEach(names.toReversed(), (name) => fs.ensureDir(path.join(test.directory, name)))
+      yield* fs.writeJson(path.join(test.directory, "package.json"), { workspaces: ["packages/*"] })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.workspaces).toEqual(
+        names.slice(0, MAX_COLLECTION_ITEMS).map((name) => ({ path: name, name: null })),
+      )
+      expect(result.metadata.overview.truncationReasons).toEqual(["workspaces"])
+      expect(result.metadata.truncated).toBe(true)
+      expect((yield* tool.execute({}, ctx)).output).toBe(result.output)
+    }),
+  )
+
+  it.instance("stops pathological workspace traversal at the shared budget and reports partial results", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.ensureDir(path.join(test.directory, "a/b/c"))
+      yield* fs.ensureDir(path.join(test.directory, "node_modules/ignored"))
+      yield* fs.writeJson(path.join(test.directory, "package.json"), { workspaces: [Array(20).fill("**").join("/")] })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.truncationReasons).toContain("workspaceTraversal")
+      expect(result.metadata.truncated).toBe(true)
+      expect(result.metadata.overview.workspaces.length).toBeGreaterThan(0)
+      expect(result.metadata.overview.workspaces.length).toBeLessThanOrEqual(MAX_COLLECTION_ITEMS)
+      expect(result.output).not.toContain("ignored")
+      expect((yield* tool.execute({}, ctx)).output).toBe(result.output)
+    }),
+  )
+
+  it.instance("bounds pattern counts, scalar text, and final JSON bytes without breaking structured output", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        name: "名".repeat(MAX_TEXT_LENGTH + 1),
+        workspaces: [
+          ...Array.from(
+            { length: MAX_COLLECTION_ITEMS + 1 },
+            (_, index) => `${String(index).padStart(3, "0")}-${"x".repeat(900)}`,
+          ),
+          "x".repeat(MAX_TEXT_LENGTH + 1),
+        ],
+      })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(Buffer.byteLength(result.output)).toBeLessThanOrEqual(MAX_OUTPUT_BYTES)
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+      expect(result.metadata.overview.package?.name).toHaveLength(MAX_TEXT_LENGTH)
+      expect(result.metadata.overview.truncationReasons).toEqual([
+        "outputBytes",
+        "packageName",
+        "workspacePatternLength",
+        "workspacePatterns",
+      ])
+      expect(result.metadata.truncated).toBe(true)
+      expect(result.metadata.overview.workspacePatterns).toEqual([...result.metadata.overview.workspacePatterns].sort())
+      expect((yield* tool.execute({}, ctx)).output).toBe(result.output)
+    }),
+  )
+
+  const technologyCases = [
+    {
+      title: "detects TypeScript from a root source extension",
+      files: ["index.tsx"],
+      manifest: {},
+      languages: ["TypeScript"],
+      frameworks: [],
+    },
+    {
+      title: "sorts and deduplicates languages from source and manifest filenames",
+      files: [
+        "index.ts",
+        "types.ts",
+        "tsconfig.json",
+        "main.js",
+        "Main.java",
+        "pyproject.toml",
+        "go.mod",
+        "Cargo.toml",
+      ],
+      manifest: {},
+      languages: ["Go", "Java", "JavaScript", "Python", "Rust", "TypeScript"],
+      frameworks: [],
+    },
+    {
+      title: "detects exact root dependency and devDependency framework names",
+      files: [],
+      manifest: {
+        dependencies: { react: "^19", next: "^15", express: "^5", "@angular/core": "^20" },
+        devDependencies: { vue: "^3", svelte: "^5", react: "^19" },
+      },
+      languages: [],
+      frameworks: ["Angular", "Express", "Next.js", "React", "Svelte", "Vue"],
+    },
+    {
+      title: "ignores malformed dependency containers",
+      files: [],
+      manifest: { dependencies: ["react"], devDependencies: "next" },
+      languages: [],
+      frameworks: [],
+    },
+    {
+      title: "ignores invalid dependency values while preserving valid evidence",
+      files: [],
+      manifest: { dependencies: { react: false, next: {}, vue: null, svelte: " ", express: "^5" } },
+      languages: [],
+      frameworks: ["Express"],
+    },
+    {
+      title: "does not infer technologies from weak metadata or arbitrary source text",
+      files: ["README.md", "notes.txt"],
+      manifest: {
+        name: "react-typescript-project",
+        dependencies: { typescript: "^5", "@types/react": "^19", "react-helper": "1" },
+        scripts: { build: "next build" },
+      },
+      languages: [],
+      frameworks: [],
+    },
+    {
+      title: "ignores language evidence inside generated directories and deeper source trees",
+      files: ["node_modules/main.ts", "dist/main.js", "build/main.py", "coverage/Main.java", "src/deep/main.rs"],
+      manifest: {},
+      languages: [],
+      frameworks: [],
+    },
+  ]
+
+  technologyCases.forEach((input) => {
+    it.instance(input.title, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        yield* fs.writeJson(path.join(test.directory, "package.json"), input.manifest)
+        yield* Effect.forEach(input.files, (file) =>
+          Effect.gen(function* () {
+            yield* fs.ensureDir(path.dirname(path.join(test.directory, file)))
+            yield* fs.writeFileString(path.join(test.directory, file), "React Next.js Python")
+          }),
+        )
+        const info = yield* RepositoryOverviewTool
+        const tool = yield* info.init()
+        const result = yield* tool.execute({}, ctx)
+        expect(result.metadata.overview.languages).toEqual(input.languages)
+        expect(result.metadata.overview.frameworks).toEqual(input.frameworks)
+        expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+      }),
+    )
+  })
+
+  it.instance("aggregates workspace technologies, deduplicates frameworks, and skips symlink evidence", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        workspaces: ["packages/*", "node_modules/*"],
+        dependencies: { react: "^19" },
+      })
+      yield* Effect.forEach(["packages/a", "packages/b", "node_modules/ignored"], (directory) =>
+        fs.ensureDir(path.join(test.directory, directory)),
+      )
+      yield* fs.writeJson(path.join(test.directory, "packages/a/package.json"), { dependencies: { react: "^19" } })
+      yield* fs.writeJson(path.join(test.directory, "packages/b/package.json"), { devDependencies: { vue: "^3" } })
+      yield* fs.writeJson(path.join(test.directory, "node_modules/ignored/package.json"), {
+        dependencies: { next: "^15" },
+      })
+      yield* fs.writeFileString(path.join(test.directory, "packages/a/index.ts"), "")
+      yield* fs.writeFileString(path.join(test.directory, "packages/b/main.py"), "")
+      yield* fs.writeFileString(path.join(test.directory, "node_modules/ignored/Main.java"), "")
+      yield* fs.symlink(
+        path.join(test.directory, "node_modules/ignored/Main.java"),
+        path.join(test.directory, "packages/a/Main.java"),
+      )
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.languages).toEqual(["Python", "TypeScript"])
+      expect(result.metadata.overview.frameworks).toEqual(["React", "Vue"])
+      expect(result.metadata.overview.workspaces).toEqual([
+        { path: "packages/a", name: null },
+        { path: "packages/b", name: null },
+      ])
+    }),
+  )
+
+  it.instance("continues collecting workspace information when one workspace package.json is malformed", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        name: "root",
+        workspaces: ["packages/*"],
+      })
+      yield* Effect.forEach(["packages/good", "packages/broken"], (directory) =>
+        fs.ensureDir(path.join(test.directory, directory)),
+      )
+      yield* fs.writeJson(path.join(test.directory, "packages/good/package.json"), {
+        name: "@example/good",
+        dependencies: { vue: "^3" },
+      })
+      yield* fs.writeFileString(path.join(test.directory, "packages/good/index.ts"), "")
+      yield* fs.writeFileString(path.join(test.directory, "packages/broken/package.json"), "{broken")
+      yield* fs.writeFileString(path.join(test.directory, "packages/broken/main.py"), "")
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.workspaces).toEqual([
+        { path: "packages/broken", name: null },
+        { path: "packages/good", name: "@example/good" },
+      ])
+      expect(result.metadata.overview.languages).toEqual(["Python", "TypeScript"])
+      expect(result.metadata.overview.frameworks).toEqual(["Vue"])
+      expect(result.metadata.overview.package).toEqual({ name: "root" })
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+    }),
+  )
+
+  it.instance("requests read permission for root and workspace package metadata", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      const requests: Parameters<Tool.Context["ask"]>[0][] = []
+      const instance = yield* InstanceState.context
+      const context = {
+        ...ctx,
+        ask: (input) =>
+          Effect.sync(() => {
+            requests.push(input)
+          }),
+      } satisfies Tool.Context
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        name: "root",
+        workspaces: ["packages/*"],
+      })
+      yield* fs.ensureDir(path.join(test.directory, "packages/app"))
+      yield* fs.writeJson(path.join(test.directory, "packages/app/package.json"), {
+        name: "@example/app",
+        dependencies: { react: "^19" },
+      })
+      yield* fs.writeFileString(path.join(test.directory, "packages/app/index.ts"), "")
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, context)
+      expect(requests.filter((request) => request.permission === "read").map((request) => request.patterns)).toEqual([
+        [path.relative(instance.worktree, path.join(test.directory, "package.json"))],
+        [path.relative(instance.worktree, path.join(test.directory, "packages/app/package.json"))],
+      ])
+      expect(result.metadata.overview.package).toEqual({ name: "root" })
+      expect(result.metadata.overview.workspaces).toEqual([{ path: "packages/app", name: "@example/app" }])
+      expect(result.metadata.overview.frameworks).toContain("React")
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+    }),
+  )
+
+  const workspaceCases = [
+    {
+      title: "resolves array workspaces with names, sorting, and duplicate removal",
+      declaration: ["packages/*", "apps/*", "packages/alpha", "./packages//*"],
+      patterns: ["apps/*", "packages/*", "packages/alpha"],
+      expected: [
+        { path: "apps/web", name: "@example/web" },
+        { path: "packages/alpha", name: "@example/alpha" },
+        { path: "packages/broken", name: null },
+        { path: "packages/empty", name: null },
+        { path: "packages/missing", name: null },
+        { path: "packages/number", name: null },
+      ],
+    },
+    {
+      title: "resolves object workspace declarations",
+      declaration: { packages: ["apps/*", "packages/alpha"] },
+      patterns: ["apps/*", "packages/alpha"],
+      expected: [
+        { path: "apps/web", name: "@example/web" },
+        { path: "packages/alpha", name: "@example/alpha" },
+      ],
+    },
+    {
+      title: "resolves nested workspace patterns while excluding generated directories and symlinks",
+      declaration: [
+        "packages/**/alpha",
+        "node_modules/*",
+        "dist/*",
+        "build/*",
+        "coverage/*",
+        "packages/node_modules/*",
+        "../*",
+        "/tmp/*",
+        "linked/*",
+      ],
+      patterns: ["linked/*", "packages/**/alpha"],
+      expected: [{ path: "packages/alpha", name: "@example/alpha" }],
+    },
+    ...["packages/*", { packages: "packages/*" }, ["packages/*", 42], null].map((declaration, index) => ({
+      title: `ignores malformed workspace declaration ${index + 1}`,
+      declaration,
+      patterns: [],
+      expected: [],
+    })),
+  ]
+
+  workspaceCases.forEach((input) => {
+    it.instance(input.title, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        yield* fs.writeJson(path.join(test.directory, "package.json"), { name: "root", workspaces: input.declaration })
+        yield* Effect.forEach(
+          [
+            ["packages/number", '{"name":42}'],
+            ["packages/empty", '{"name":"   "}'],
+            ["packages/broken", "{broken"],
+            ["packages/alpha", '{"name":"@example/alpha"}'],
+            ["apps/web", '{"name":"@example/web"}'],
+            ["node_modules/alpha", '{"name":"excluded"}'],
+            ["packages/node_modules/alpha", '{"name":"excluded"}'],
+          ],
+          (item) =>
+            Effect.gen(function* () {
+              yield* fs.ensureDir(path.join(test.directory, item[0]))
+              yield* fs.writeFileString(path.join(test.directory, item[0], "package.json"), item[1])
+            }),
+        )
+        yield* fs.ensureDir(path.join(test.directory, "packages/missing"))
+        yield* fs.symlink(path.join(test.directory, "apps"), path.join(test.directory, "linked"))
+        const info = yield* RepositoryOverviewTool
+        const tool = yield* info.init()
+        const result = yield* tool.execute({}, ctx)
+        expect(result.metadata.overview.workspaces).toEqual(input.expected)
+        expect(result.metadata.overview.workspacePatterns).toEqual(input.patterns)
+        expect(JSON.parse(result.output).workspacePatterns).toEqual(input.patterns)
+        expect(JSON.parse(result.output).workspaces).toEqual(input.expected)
+        expect(result.metadata.overview.package).toEqual({ name: "root" })
+      }),
+    )
+  })
+
+  it.instance("ignores unsafe workspace patterns in declarations and resolution", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.ensureDir(path.join(test.directory, "packages/private"))
+      yield* fs.writeJson(path.join(test.directory, "package.json"), {
+        workspaces: [
+          "../outside/*",
+          "/tmp/*",
+          "C:/outside/*",
+          "C:\\outside\\*",
+          "!packages/private",
+          "packages\\*",
+          path.join(test.directory, "packages", "*"),
+          `../${path.basename(test.directory)}/packages/*`,
+        ],
+      })
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.workspacePatterns).toEqual([])
+      expect(result.metadata.overview.workspaces).toEqual([])
+      expect(JSON.parse(result.output).workspacePatterns).toEqual([])
+      expect(JSON.parse(result.output).workspaces).toEqual([])
+    }),
+  )
+
+  const cases = [
+    {
+      title: "reads package name and prefers explicit manager over conflicting lockfiles",
+      manifest: JSON.stringify({
+        name: "example",
+        packageManager: "bun@1.4.2",
+        scripts: { test: "private-script" },
+        dependencies: { privateDependency: "1.0.0" },
+      }),
+      locks: ["pnpm-lock.yaml", "yarn.lock"],
+      package: { name: "example" },
+      manager: { name: "bun", version: "1.4.2", source: "package.json#packageManager" },
+    },
+    {
+      title: "infers a manager when the packageManager field is absent",
+      manifest: JSON.stringify({ name: "example" }),
+      locks: ["pnpm-lock.yaml"],
+      package: { name: "example" },
+      manager: { name: "pnpm", version: null, source: "pnpm-lock.yaml" },
+    },
+    {
+      title: "infers a manager without package.json",
+      manifest: undefined,
+      locks: ["yarn.lock"],
+      package: null,
+      manager: { name: "yarn", version: null, source: "yarn.lock" },
+    },
+    {
+      title: "infers a manager despite malformed package.json",
+      manifest: "{broken",
+      locks: ["package-lock.json"],
+      package: null,
+      manager: { name: "npm", version: null, source: "package-lock.json" },
+    },
+    {
+      title: "does not guess between conflicting lockfiles",
+      manifest: "{}",
+      locks: ["bun.lock", "pnpm-lock.yaml"],
+      package: { name: null },
+      manager: null,
+    },
+    {
+      title: "treats both Bun lockfile formats as the same manager",
+      manifest: "{}",
+      locks: ["bun.lockb", "bun.lock"],
+      package: { name: null },
+      manager: { name: "bun", version: null, source: "bun.lock" },
+    },
+    {
+      title: "ignores invalid metadata field types",
+      manifest: JSON.stringify({ name: 42, packageManager: false }),
+      locks: [],
+      package: { name: null },
+      manager: null,
+    },
+  ]
+
+  cases.forEach((input) => {
+    it.instance(input.title, () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const fs = yield* FSUtil.Service
+        if (input.manifest !== undefined) {
+          yield* fs.writeFileString(path.join(test.directory, "package.json"), input.manifest)
+        }
+        yield* Effect.forEach(input.locks, (file) => fs.writeFileString(path.join(test.directory, file), ""))
+        const info = yield* RepositoryOverviewTool
+        const tool = yield* info.init()
+        const result = yield* tool.execute({}, ctx)
+        expect(JSON.parse(result.output)).toEqual({
+          ...result.metadata.overview,
+          package: input.package,
+          packageManager: input.manager,
+        })
+        expect(result.output).not.toContain("private-script")
+        expect(result.output).not.toContain("privateDependency")
+      }),
+    )
+  })
+})

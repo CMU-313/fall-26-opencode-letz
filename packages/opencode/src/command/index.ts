@@ -9,6 +9,7 @@ import { MCP } from "../mcp"
 import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
+import PROMPT_REPOSITORY_OVERVIEW from "./template/repository-overview.txt"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 
 type State = {
@@ -46,6 +47,7 @@ export function hints(template: string) {
 export const Default = {
   INIT: "init",
   REVIEW: "review",
+  REPOSITORY_OVERVIEW: "repository-overview",
 } as const
 
 export interface Interface {
@@ -85,6 +87,15 @@ const layer = Layer.effect(
         },
         subtask: true,
         hints: hints(PROMPT_REVIEW),
+      }
+
+      commands[Default.REPOSITORY_OVERVIEW] = {
+        name: Default.REPOSITORY_OVERVIEW,
+        description: "Show a high-level overview of the current repository",
+        source: "command",
+        template: PROMPT_REPOSITORY_OVERVIEW,
+        subtask: false,
+        hints: hints(PROMPT_REPOSITORY_OVERVIEW),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {

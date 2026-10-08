@@ -106,6 +106,44 @@ afterEach(async () => {
 })
 
 describe("tool.registry", () => {
+  it.instance("exposes and executes repository_overview through the registry", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      yield* Effect.promise(() => fs.mkdir(path.join(test.directory, "src")))
+      yield* Effect.promise(() => Bun.write(path.join(test.directory, "README.md"), "Example repository"))
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("repository_overview")
+      const agents = yield* Agent.Service
+      const agent = yield* agents.defaultInfo()
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent,
+      })
+      const overview = tools.find((tool) => tool.id === "repository_overview")
+      if (!overview) throw new Error("repository_overview was not returned for prompts")
+      const result = yield* overview.execute({}, {
+        sessionID: SessionID.make("ses_test"),
+        messageID: MessageID.make("msg_test"),
+        agent: agent.name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      } satisfies Tool.Context)
+      expect(result.title).toBe("Repository overview")
+      expect(JSON.parse(result.output)).toMatchObject({
+        root: test.directory,
+        name: path.basename(test.directory),
+        folders: expect.arrayContaining(["src"]),
+        importantFiles: expect.arrayContaining([{ path: "README.md", kind: "readme" }]),
+        truncated: false,
+        truncationReasons: [],
+      })
+      expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+        }),
+  )
+  
   it.instance("exposes directory_summary", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
