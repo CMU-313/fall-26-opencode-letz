@@ -10,6 +10,7 @@ import { ToolJsonSchema } from "../../src/tool/json-schema"
 // provider-compatible while tools use Effect Schema internally.
 
 import { Parameters as ApplyPatch } from "../../src/tool/apply_patch"
+import { Parameters as DirectorySummary } from "../../src/tool/directory_summary"
 import { Parameters as Edit } from "../../src/tool/edit"
 import { Parameters as Glob } from "../../src/tool/glob"
 import { Parameters as Grep } from "../../src/tool/grep"
@@ -38,6 +39,7 @@ describe("tool parameters", () => {
   describe("JSON Schema (wire shape)", () => {
     test("apply_patch", () => expect(toJsonSchema(ApplyPatch)).toMatchSnapshot())
     test("bash", () => expect(toJsonSchema(Shell)).toMatchSnapshot())
+    test("directory_summary", () => expect(toJsonSchema(DirectorySummary)).toMatchSnapshot())
     test("edit", () => expect(toJsonSchema(Edit)).toMatchSnapshot())
     test("glob", () => expect(toJsonSchema(Glob)).toMatchSnapshot())
     test("grep", () => expect(toJsonSchema(Grep)).toMatchSnapshot())
@@ -102,6 +104,15 @@ describe("tool parameters", () => {
     })
     test("rejects non-string patchText", () => {
       expect(accepts(ApplyPatch, { patchText: 123 })).toBe(false)
+    })
+  })
+
+  describe("directory_summary", () => {
+    test("requires a nonempty path", () => {
+      expect(parse(DirectorySummary, { path: "." })).toEqual({ path: "." })
+      expect(accepts(DirectorySummary, {})).toBe(false)
+      expect(accepts(DirectorySummary, { path: "" })).toBe(false)
+      expect(accepts(DirectorySummary, { path: 42 })).toBe(false)
     })
   })
 

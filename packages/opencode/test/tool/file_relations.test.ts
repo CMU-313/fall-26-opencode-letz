@@ -1,0 +1,621 @@
+import { PermissionV1 } from "@opencode-ai/core/v1/permission"
+import { describe, expect } from "bun:test"
+import path from "path"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { Cause, Effect, Exit } from "effect"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Ripgrep } from "@opencode-ai/core/ripgrep"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import {
+  FileRelationsTool,
+  DEPENDENT_LIMIT,
+  exportTarget,
+  packageName,
+  searchPattern,
+} from "../../src/tool/file_relations"
+import { SessionID, MessageID } from "../../src/session/schema"
+import { Truncate } from "@/tool/truncate"
+import { Agent } from "../../src/agent/agent"
+import { TestInstance } from "../fixture/fixture"
+import { testEffect } from "../lib/effect"
+import { Git } from "@/git"
+import type * as Tool from "../../src/tool/tool"
+
+const it = testEffect(
+  LayerNode.compile(
+    LayerNode.group([CrossSpawnSpawner.node, FSUtil.node, Ripgrep.node, Truncate.node, Agent.node, Git.node]),
+  ),
+)
+
+const ctx = {
+  sessionID: SessionID.make("ses_test"),
+  messageID: MessageID.make("msg_test"),
+  callID: "",
+  agent: "build",
+  abort: AbortSignal.any([]),
+  messages: [],
+  metadata: () => Effect.void,
+  ask: () => Effect.void,
+}
+
+const asks = () => {
+  const items: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+  return {
+    items,
+    next: {
+      ...ctx,
+      ask: (req: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">) =>
+        Effect.sync(() => {
+          items.push(req)
+        }),
+    } satisfies Tool.Context,
+  }
+}
+
+type Output = {
+  file: string
+  package: string | null
+  imports: Array<{ specifier: string; kind: string; dynamic?: boolean; resolved?: string }>
+  exports: string[]
+  dependents: { total: number; files: string[]; truncated?: string }
+}
+
+// A two-package monorepo: "app" imports from itself (relative and "@/" alias),
+// from the "shared" workspace package through its exports map, and from npm/runtime.
+const MAIN = `
+import { helper } from "./helper"
+import { util } from "@/lib/util"
+import { shared } from "@fx/shared/thing"
+import { Effect } from "effect"
+import fs from "fs"
+import type { T } from "./types"
+// import { fake } from "./in-comment"
+const text = "import { fake } from './in-string'"
+const lazy = () => import("./lazy")
+export const c = 1
+export function f() {}
+export class K {}
+export * as NS from "./helper"
+export default f
+export type TT = string
+export interface II {}
+`
+
+const workspace = (dir: string) =>
+  Effect.promise(async () => {
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify({ name: "fixture-root", workspaces: ["packages/*"] }),
+      "packages/app/package.json": JSON.stringify({ name: "@fx/app" }),
+      "packages/app/tsconfig.json": `{
+        // comments are allowed in tsconfig
+        "compilerOptions": { "paths": { "@/*": ["./src/*"] } },
+      }`,
+      "packages/app/src/main.ts": MAIN,
+      "packages/app/src/helper.ts": "export const helper = 1\n",
+      "packages/app/src/lib/util.ts": "export const util = 1\n",
+      "packages/app/src/lazy.ts": "export const lazy = 1\n",
+      "packages/app/src/types.ts": "export type T = 1\n",
+      "packages/app/README.md": "not code\n",
+      "packages/shared/package.json": JSON.stringify({ name: "@fx/shared", exports: { "./*": "./src/*.ts" } }),
+      "packages/shared/src/thing.ts": "export const shared = 1\n",
+    }
+    for (const [file, content] of Object.entries(files)) await Bun.write(path.join(dir, file), content)
+  })
+
+const run = (filePath: string, context: Tool.Context = ctx) =>
+  Effect.gen(function* () {
+    const info = yield* FileRelationsTool
+    const tool = yield* info.init()
+    return yield* tool.execute({ filePath }, context)
+  })
+
+const failure = (filePath: string) =>
+  Effect.gen(function* () {
+    const exit = yield* run(filePath).pipe(Effect.exit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (!Exit.isFailure(exit)) return ""
+    const err = Cause.squash(exit.cause)
+    return err instanceof Error ? err.message : String(err)
+  })
+
+describe("tool.file_relations", () => {
+  it.instance(
+    "classifies each import as same-package, workspace, or external",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const result = yield* run(path.join(test.directory, "packages/app/src/main.ts"))
+        const output = JSON.parse(result.output) as Output
+
+        expect(output.package).toBe("@fx/app")
+        expect(output.imports).toEqual([
+          { specifier: "./helper", kind: "same-package", resolved: "packages/app/src/helper.ts" },
+          { specifier: "./lazy", kind: "same-package", dynamic: true, resolved: "packages/app/src/lazy.ts" },
+          { specifier: "@/lib/util", kind: "same-package", resolved: "packages/app/src/lib/util.ts" },
+          { specifier: "@fx/shared/thing", kind: "workspace", resolved: "packages/shared/src/thing.ts" },
+          { specifier: "effect", kind: "external" },
+          { specifier: "fs", kind: "external" },
+        ])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "ignores type-only imports and imports inside comments or strings",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const result = yield* run(path.join(test.directory, "packages/app/src/main.ts"))
+        const specifiers = (JSON.parse(result.output) as Output).imports.map((item) => item.specifier)
+
+        expect(specifiers).not.toContain("./types")
+        expect(specifiers).not.toContain("./in-comment")
+        expect(specifiers).not.toContain("./in-string")
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "lists top-level runtime exports and omits type-only exports",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const result = yield* run(path.join(test.directory, "packages/app/src/main.ts"))
+
+        expect((JSON.parse(result.output) as Output).exports).toEqual(["K", "NS", "c", "default", "f"])
+        expect(result.metadata.exports).toBe(5)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "returns structured JSON fields instead of prose",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
+
+        expect(JSON.parse(result.output)).toEqual({
+          file: "packages/app/src/helper.ts",
+          package: "@fx/app",
+          imports: [],
+          exports: ["helper"],
+          dependents: { total: 1, files: ["packages/app/src/main.ts"] },
+        })
+        expect(result.title).toBe("packages/app/src/helper.ts")
+        expect(result.metadata).toMatchObject({ imports: 0, exports: 1, dependents: 1 })
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "lists dependents through relative, alias, and workspace imports",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const dependents = (file: string) =>
+          run(path.join(test.directory, file)).pipe(
+            Effect.map((result) => (JSON.parse(result.output) as Output).dependents),
+          )
+
+        expect(yield* dependents("packages/app/src/helper.ts")).toEqual({
+          total: 1,
+          files: ["packages/app/src/main.ts"],
+        })
+        expect((yield* dependents("packages/app/src/lib/util.ts")).files).toEqual(["packages/app/src/main.ts"])
+        expect((yield* dependents("packages/shared/src/thing.ts")).files).toEqual(["packages/app/src/main.ts"])
+        expect((yield* dependents("packages/app/src/main.ts")).total).toBe(0)
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "does not count a file that only mentions the target name as a dependent",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(test.directory, "packages/app/src/mentions.ts"),
+            `// helper is mentioned here\nexport const helperName = "helper"\n`,
+          ),
+        )
+        const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
+
+        expect((JSON.parse(result.output) as Output).dependents.files).toEqual(["packages/app/src/main.ts"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "truncates long dependent lists with a marker",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const count = DEPENDENT_LIMIT + 5
+        yield* Effect.promise(async () => {
+          for (let i = 0; i < count; i++) {
+            await Bun.write(
+              path.join(test.directory, `packages/app/src/users/user-${String(i).padStart(2, "0")}.ts`),
+              `import { helper } from "../helper"\nexport const value = helper\n`,
+            )
+          }
+        })
+        const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
+        const dependents = (JSON.parse(result.output) as Output).dependents
+
+        expect(dependents.total).toBe(count + 1)
+        expect(dependents.files).toHaveLength(DEPENDENT_LIMIT)
+        expect(dependents.truncated).toBe(`...and 6 more (showing first ${DEPENDENT_LIMIT})`)
+        expect(result.metadata.dependents).toBe(count + 1)
+      }),
+    { git: true },
+    30000,
+  )
+
+  it.instance(
+    "flags an incomplete dependent search when the candidate cap is hit",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        yield* Effect.promise(() =>
+          Bun.write(path.join(test.directory, "packages/app/src/noisy.ts"), `// "./helper"\n`.repeat(5001)),
+        )
+        const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
+
+        expect(
+          (JSON.parse(result.output) as Output & { dependents: { incomplete?: string } }).dependents.incomplete,
+        ).toContain("some dependents may be missing")
+      }),
+    { git: true },
+    30000,
+  )
+
+  it.instance(
+    'finds dependents of an index file imported as ".", "..", or "./index"',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        yield* Effect.promise(async () => {
+          const dir = path.join(test.directory, "packages/app/src/feature")
+          await Bun.write(path.join(dir, "index.ts"), "export const feature = 1\n")
+          await Bun.write(path.join(dir, "sibling.ts"), `import { feature } from "."\nexport const a = feature\n`)
+          await Bun.write(path.join(dir, "sub/child.ts"), `import { feature } from ".."\nexport const b = feature\n`)
+          await Bun.write(
+            path.join(dir, "explicit.ts"),
+            `import { feature } from "./index.js"\nexport const c = feature\n`,
+          )
+          await Bun.write(
+            path.join(dir, "sub/explicit.ts"),
+            `import { feature } from "../index"\nexport const d = feature\n`,
+          )
+        })
+        const result = yield* run(path.join(test.directory, "packages/app/src/feature/index.ts"))
+
+        expect((JSON.parse(result.output) as Output).dependents.files).toEqual([
+          "packages/app/src/feature/explicit.ts",
+          "packages/app/src/feature/sibling.ts",
+          "packages/app/src/feature/sub/child.ts",
+          "packages/app/src/feature/sub/explicit.ts",
+        ])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "reads files that start with a shebang line",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const bin = path.join(test.directory, "packages/app/src/bin.cjs")
+        yield* Effect.promise(() => Bun.write(bin, `#!/usr/bin/env node\nrequire("./helper")\n`))
+
+        const imports = (JSON.parse((yield* run(bin)).output) as Output).imports
+        expect(imports.map((item) => item.specifier)).toEqual(["./helper"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "reads CommonJS require calls as imports and dependents",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const legacy = path.join(test.directory, "packages/app/src/legacy.cjs")
+        yield* Effect.promise(() =>
+          Bun.write(legacy, `const { helper } = require("./helper")\nmodule.exports = helper\n`),
+        )
+
+        const imports = (JSON.parse((yield* run(legacy)).output) as Output).imports
+        expect(imports).toEqual([
+          { specifier: "./helper", kind: "same-package", resolved: "packages/app/src/helper.ts" },
+        ])
+        const helper = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
+        expect((JSON.parse(helper.output) as Output).dependents.files).toContain("packages/app/src/legacy.cjs")
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "resolves a standalone package importing itself by name",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          await Bun.write(
+            path.join(test.directory, "package.json"),
+            JSON.stringify({ name: "solo", exports: { "./*": "./src/*.ts" } }),
+          )
+          await Bun.write(path.join(test.directory, "src/a.ts"), `import { b } from "solo/b"\nexport const a = b\n`)
+          await Bun.write(path.join(test.directory, "src/b.ts"), "export const b = 1\n")
+        })
+        const a = JSON.parse((yield* run(path.join(test.directory, "src/a.ts"))).output) as Output
+        expect(a.imports).toEqual([{ specifier: "solo/b", kind: "same-package", resolved: "src/b.ts" }])
+        const b = JSON.parse((yield* run(path.join(test.directory, "src/b.ts"))).output) as Output
+        expect(b.dependents.files).toEqual(["src/a.ts"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    'resolves "#name" imports through package.json imports, for every condition',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          const imports = { "#db": { bun: "./src/db.bun.ts", node: "./src/db.node.ts" }, "#dep": "effect" }
+          await Bun.write(path.join(test.directory, "package.json"), JSON.stringify({ name: "solo", imports }))
+          await Bun.write(path.join(test.directory, "src/a.ts"), `import "#db"\nimport "#dep"\nexport const a = 1\n`)
+          await Bun.write(path.join(test.directory, "src/db.bun.ts"), "export const db = 1\n")
+          await Bun.write(path.join(test.directory, "src/db.node.ts"), "export const db = 1\n")
+        })
+        const output = (file: string) =>
+          run(path.join(test.directory, file)).pipe(Effect.map((result) => JSON.parse(result.output) as Output))
+
+        expect((yield* output("src/a.ts")).imports).toEqual([
+          { specifier: "#db", kind: "same-package", resolved: "src/db.bun.ts" },
+          { specifier: "#dep", kind: "external" },
+        ])
+        expect((yield* output("src/db.bun.ts")).dependents.files).toEqual(["src/a.ts"])
+        expect((yield* output("src/db.node.ts")).dependents.files).toEqual(["src/a.ts"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "picks the most specific tsconfig alias and ignores an unresolved catch-all",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          const paths = { "*": ["./types/*"], "@/*": ["./src/*"], "@/ui/*": ["./ui/*"] }
+          await Bun.write(path.join(test.directory, "package.json"), JSON.stringify({ name: "solo" }))
+          await Bun.write(path.join(test.directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { paths } }))
+          await Bun.write(
+            path.join(test.directory, "src/a.ts"),
+            `import "@/ui/button"\nimport "@/b"\nimport "effect"\nexport const a = 1\n`,
+          )
+          await Bun.write(path.join(test.directory, "src/b.ts"), "export const b = 1\n")
+          await Bun.write(path.join(test.directory, "ui/button.ts"), "export const button = 1\n")
+        })
+        const result = yield* run(path.join(test.directory, "src/a.ts"))
+
+        expect((JSON.parse(result.output) as Output).imports).toEqual([
+          { specifier: "@/b", kind: "same-package", resolved: "src/b.ts" },
+          { specifier: "@/ui/button", kind: "same-package", resolved: "ui/button.ts" },
+          { specifier: "effect", kind: "external" },
+        ])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    'fills a "*" in the middle of a tsconfig alias target',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          const paths = { "~/*": ["./lib/*.ts"] }
+          await Bun.write(path.join(test.directory, "package.json"), JSON.stringify({ name: "solo" }))
+          await Bun.write(path.join(test.directory, "tsconfig.json"), JSON.stringify({ compilerOptions: { paths } }))
+          await Bun.write(path.join(test.directory, "src/a.ts"), `import "~/util"\nexport const a = 1\n`)
+          await Bun.write(path.join(test.directory, "lib/util.ts"), "export const util = 1\n")
+        })
+        const a = JSON.parse((yield* run(path.join(test.directory, "src/a.ts"))).output) as Output
+        expect(a.imports).toEqual([{ specifier: "~/util", kind: "same-package", resolved: "lib/util.ts" }])
+        const util = JSON.parse((yield* run(path.join(test.directory, "lib/util.ts"))).output) as Output
+        expect(util.dependents.files).toEqual(["src/a.ts"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    'uses the "require" export condition for require() calls',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* Effect.promise(async () => {
+          const exports = { ".": { import: "./esm.js", require: "./cjs.cjs" } }
+          await Bun.write(path.join(test.directory, "package.json"), JSON.stringify({ name: "solo", exports }))
+          await Bun.write(path.join(test.directory, "esm.js"), "export const x = 1\n")
+          await Bun.write(path.join(test.directory, "cjs.cjs"), "module.exports = { x: 1 }\n")
+          await Bun.write(path.join(test.directory, "use.cjs"), `const { x } = require("solo")\n`)
+          await Bun.write(path.join(test.directory, "use.mjs"), `import { x } from "solo"\nexport const y = x\n`)
+        })
+        const output = (file: string) =>
+          run(path.join(test.directory, file)).pipe(Effect.map((result) => JSON.parse(result.output) as Output))
+
+        expect((yield* output("use.cjs")).imports).toEqual([
+          { specifier: "solo", kind: "same-package", resolved: "cjs.cjs" },
+        ])
+        expect((yield* output("use.mjs")).imports).toEqual([
+          { specifier: "solo", kind: "same-package", resolved: "esm.js" },
+        ])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    'normalizes an absolute path that contains ".."',
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        // String concatenation on purpose: path.join would normalize the ".." away.
+        const result = yield* run(test.directory + "/packages/app/src/lib/../helper.ts")
+        const output = JSON.parse(result.output) as Output
+
+        expect(output.file).toBe("packages/app/src/helper.ts")
+        expect(output.dependents.files).toEqual(["packages/app/src/main.ts"])
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "flags an incomplete dependent search when the search fails",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"), {
+          ...ctx,
+          abort: AbortSignal.abort(),
+        })
+        const dependents = (JSON.parse(result.output) as Output & { dependents: { incomplete?: string } }).dependents
+
+        expect(dependents.incomplete).toBe("dependent search failed, so some dependents may be missing")
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "errors on a nonexistent path",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        expect(yield* failure(path.join(test.directory, "missing.ts"))).toContain("File not found")
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "errors on a directory",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        expect(yield* failure(path.join(test.directory, "packages/app/src"))).toContain("Not a file")
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "errors on a file that is not JavaScript or TypeScript",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        expect(yield* failure(path.join(test.directory, "packages/app/README.md"))).toContain("Unsupported file type")
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "asks for read permission on the file",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        yield* workspace(test.directory)
+        const { items, next } = asks()
+        yield* run(path.join(test.directory, "packages/app/src/helper.ts"), next)
+
+        const read = items.find((item) => item.permission === "read")
+        expect(read?.patterns).toEqual(["packages/app/src/helper.ts"])
+        expect(items.find((item) => item.permission === "external_directory")).toBeUndefined()
+      }),
+    { git: true },
+  )
+
+  it.instance(
+    "asks for external_directory permission outside the project",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const outside = path.join(path.dirname(test.directory), `outside-${path.basename(test.directory)}.ts`)
+        yield* Effect.acquireRelease(
+          Effect.promise(() => Bun.write(outside, "export const x = 1\n")),
+          () => Effect.promise(() => Bun.file(outside).delete()),
+        )
+        const { items, next } = asks()
+        yield* run(outside, next)
+
+        expect(items.find((item) => item.permission === "external_directory")).toBeDefined()
+      }),
+    { git: true },
+  )
+
+  it.instance("stays inside the project directory when it is not a git repository", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      yield* workspace(test.directory)
+      // Without git, ripgrep does not apply .gitignore, so node_modules must be skipped explicitly.
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(test.directory, "node_modules/lib/uses.ts"),
+          `import { helper } from "../../packages/app/src/helper"\nexport const x = helper\n`,
+        ),
+      )
+      const result = yield* run(path.join(test.directory, "packages/app/src/helper.ts"))
+      const output = JSON.parse(result.output) as Output
+
+      expect(output.file).toBe("packages/app/src/helper.ts")
+      expect(output.dependents.files).toEqual(["packages/app/src/main.ts"])
+    }),
+  )
+})
+
+describe("tool.file_relations helpers", () => {
+  it.effect("reads package names from bare and scoped specifiers", () =>
+    Effect.sync(() => {
+      expect(packageName("effect")).toBe("effect")
+      expect(packageName("effect/Schema")).toBe("effect")
+      expect(packageName("@opencode-ai/core/fs-util")).toBe("@opencode-ai/core")
+    }),
+  )
+
+  it.effect("matches a name only at the end of a quoted import path", () =>
+    Effect.sync(() => {
+      const regex = new RegExp(searchPattern(["en"]))
+      expect(regex.test(`import { dict } from "@opencode-ai/ui/i18n/en"`)).toBe(true)
+      expect(regex.test(`import x from './en.js'`)).toBe(true)
+      expect(regex.test(`import x from "../en/index"`)).toBe(true)
+      expect(regex.test(`const enabled = true // then`)).toBe(false)
+      expect(regex.test(`import x from "./english"`)).toBe(false)
+    }),
+  )
+
+  it.effect("maps subpaths through package.json exports", () =>
+    Effect.sync(() => {
+      expect(exportTarget("./index.ts", ".")).toBe("./index.ts")
+      expect(exportTarget({ ".": "./src/index.ts", "./*": "./src/*.ts" }, "./fs-util")).toBe("./src/fs-util.ts")
+      expect(exportTarget({ ".": { import: "./dist/index.js" } }, ".")).toBe("./dist/index.js")
+      expect(exportTarget({ "./*.js": "./src/*.ts" }, "./a/b.js")).toBe("./src/a/b.ts")
+      expect(exportTarget({ ".": "./src/index.ts" }, "./missing")).toBeUndefined()
+      // The more specific pattern wins even when a broader one is listed first.
+      const ui = { "./*": "./src/components/*.tsx", "./i18n/*": "./src/i18n/*.ts" }
+      expect(exportTarget(ui, "./i18n/en")).toBe("./src/i18n/en.ts")
+      expect(exportTarget(ui, "./button")).toBe("./src/components/button.tsx")
+    }),
+  )
+})

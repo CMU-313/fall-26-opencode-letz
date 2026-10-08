@@ -1,0 +1,2 @@
+Use the repository_overview tool with no arguments to inspect the current repository/workspace. Present a concise conversational summary of the returned top-level structure, important files, package/workspace metadata, package manager, and detected languages/frameworks. Mention any truncation or incomplete information reported by the tool, and do not guess missing metadata.
+Use normal tool permissions. Do not modify files, start background work, or replace the tool with your own repository scan. If the tool is unavailable or permission is denied, explain that limitation.

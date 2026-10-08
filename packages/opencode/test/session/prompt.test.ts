@@ -850,6 +850,61 @@ it.instance("loop continues when finish is tool-calls", () =>
   }),
 )
 
+noLLMServer.instance("repository-overview is a discoverable argument-free built-in command", () =>
+  Effect.gen(function* () {
+    const commands = yield* Command.Service
+    const list = yield* commands.list()
+    expect(list.map((item) => item.name)).toEqual(expect.arrayContaining(["init", "review", "repository-overview"]))
+    const command = yield* commands.get("repository-overview")
+    expect(command).toMatchObject({
+      name: "repository-overview",
+      description: "Show a high-level overview of the current repository",
+      source: "command",
+      hints: [],
+      subtask: false,
+    })
+    expect(list.find((item) => item.name === "repository-overview")).toEqual(command)
+    expect(command?.template).toContain("Use the repository_overview tool")
+    expect((yield* commands.get("init"))?.source).toBe("command")
+    expect((yield* commands.get("review"))?.subtask).toBe(true)
+  }),
+)
+
+it.instance("repository-overview command requests and executes the existing tool in the current session", () =>
+  Effect.gen(function* () {
+    const setup = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({ permission: [{ permission: "*", pattern: "*", action: "allow" }] })
+    yield* setup.llm.tool("repository_overview", {})
+    yield* setup.llm.text("Here is the repository overview.")
+    const result = yield* prompt.command({
+      sessionID: session.id,
+      command: "repository-overview",
+      arguments: "",
+      agent: "build",
+    })
+    const messages = yield* MessageV2.filterCompactedEffect(session.id)
+    const request = messages
+      .filter((message) => message.info.role === "user")
+      .flatMap((message) => message.parts)
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("\n")
+    expect(request).toContain("Use the repository_overview tool")
+    const tool = messages
+      .flatMap((message) => message.parts)
+      .find(
+        (part): part is CompletedToolPart =>
+          part.type === "tool" && part.tool === "repository_overview" && part.state.status === "completed",
+      )
+    if (!tool) throw new Error("repository_overview did not complete through the command session")
+    expect(JSON.parse(tool.state.output).root).toBe(setup.dir)
+    expect(JSON.parse(tool.state.output)).toEqual(tool.state.metadata.overview)
+    expect(result.parts.some((part) => part.type === "text" && part.text === "Here is the repository overview.")).toBe(true)
+  }),
+)
+
 it.instance("glob tool keeps instance context during prompt runs", () =>
   Effect.gen(function* () {
     const { dir, llm } = yield* useServerConfig(providerCfg)

@@ -8,8 +8,11 @@ import { HintTool } from "./hint"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
+import { RepositoryOverviewTool } from "./repository-overview"
+import { FileRelationsTool } from "./file_relations" 
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
+import { DirectorySummaryTool } from "./directory_summary"
 import { TaskTool } from "./task"
 import { Database } from "@opencode-ai/core/database/database"
 import { TodoWriteTool } from "./todo"
@@ -98,6 +101,7 @@ const layer = Layer.effect(
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
     const read = yield* ReadTool
+    const directorySummary = yield* DirectorySummaryTool
     const question = yield* QuestionTool
     const hint = yield* HintTool
     const todo = yield* TodoWriteTool
@@ -107,11 +111,13 @@ const layer = Layer.effect(
     const websearch = yield* WebSearchTool
     const shell = yield* ShellTool
     const globtool = yield* GlobTool
+    const repositoryOverview = yield* RepositoryOverviewTool
     const writetool = yield* WriteTool
     const edit = yield* EditTool
     const greptool = yield* GrepTool
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
+    const fileRelations = yield* FileRelationsTool
     const agent = yield* Agent.Service
     const codeMode = flags.experimentalCodeMode ? yield* Effect.promise(() => import("./code-mode")) : undefined
     const codeModeTool = codeMode ? yield* codeMode.CodeModeTool : undefined
@@ -208,7 +214,9 @@ const layer = Layer.effect(
           invalid: Tool.init(invalid),
           shell: Tool.init(shell),
           read: Tool.init(read),
+          directorySummary: Tool.init(directorySummary),
           glob: Tool.init(globtool),
+          repositoryOverview: Tool.init(repositoryOverview),
           grep: Tool.init(greptool),
           edit: Tool.init(edit),
           write: Tool.init(writetool),
@@ -221,6 +229,7 @@ const layer = Layer.effect(
           question: Tool.init(question),
           hint: Tool.init(hint),
           lsp: Tool.init(lsptool),
+          fileRelations: Tool.init(fileRelations),
           plan: Tool.init(plan),
           ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),
         })
@@ -233,7 +242,9 @@ const layer = Layer.effect(
             tool.hint,
             tool.shell,
             tool.read,
+            tool.directorySummary,
             tool.glob,
+            tool.repositoryOverview,
             tool.grep,
             tool.edit,
             tool.write,
@@ -245,6 +256,7 @@ const layer = Layer.effect(
             tool.patch,
             ...(tool.execute ? [tool.execute] : []),
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
+            ...(flags.experimentalFileRelations ? [tool.fileRelations] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
           ],
           task: tool.task,
