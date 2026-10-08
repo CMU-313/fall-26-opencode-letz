@@ -3,13 +3,17 @@ import { Effect, Layer, Context } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import { SessionID } from "@/session/schema"
 
+export const MAX_LEVEL = 3
+
+export type HintLevel = 1 | 2 | 3
+
 export interface HintState {
-  level: 0 | 1 | 2 | 3
-  maxLevel: 3
+  level: 0 | HintLevel
+  maxLevel: typeof MAX_LEVEL
   revealed: boolean
 }
 
-const emptyState = (): HintState => ({ level: 0, maxLevel: 3, revealed: false })
+const emptyState = (): HintState => ({ level: 0, maxLevel: MAX_LEVEL, revealed: false })
 
 interface State {
   entries: Map<string, HintState>
