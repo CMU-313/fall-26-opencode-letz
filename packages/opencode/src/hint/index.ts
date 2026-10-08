@@ -38,7 +38,7 @@ const layer = Layer.effect(
       }),
     )
 
-    const key = (sessionID: SessionID, problem: string) => `${sessionID}:${problem}`
+    const key = (sessionID: SessionID, problem: string) => JSON.stringify([sessionID, problem])
 
     const get = Effect.fn("Hint.get")(function* (input: { sessionID: SessionID; problem: string }) {
       const entries = (yield* InstanceState.get(state)).entries
