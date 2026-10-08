@@ -39,8 +39,8 @@ export const Parameters = Schema.Struct({
 
 type Metadata = {
   problem: string
-  level: 1 | 2 | 3
-  maxLevel: 3
+  level: Hint.HintLevel
+  maxLevel: typeof Hint.MAX_LEVEL
   revealed: boolean
 }
 
@@ -59,31 +59,20 @@ export const HintTool = Tool.define(
             problem: params.problem,
           })
 
-          const resolved = state.level
-
-          if (state.revealed) {
-            return {
-              title: "Solution",
-              output: `Problem: ${params.problem}\n\n${SOLUTION_INSTRUCTIONS}`,
-              metadata: {
-                problem: params.problem,
-                level: resolved,
-                maxLevel: 3,
-                revealed: true,
-              },
-            }
-          }
-
-          const instructions = HINT_INSTRUCTIONS[resolved].join(" ")
+          const level = state.level
+          const title = state.revealed ? "Solution" : `Hint ${level}/${Hint.MAX_LEVEL}`
+          const output = state.revealed
+            ? `Problem: ${params.problem}\n\n${SOLUTION_INSTRUCTIONS}`
+            : `Problem: ${params.problem}\n\nHint ${level}/${Hint.MAX_LEVEL}: ${HINT_INSTRUCTIONS[level].join(" ")}`
 
           return {
-            title: `Hint ${resolved}/3`,
-            output: `Problem: ${params.problem}\n\nHint ${resolved}/3: ${instructions}`,
+            title,
+            output,
             metadata: {
               problem: params.problem,
-              level: resolved,
-              maxLevel: 3,
-              revealed: false,
+              level,
+              maxLevel: Hint.MAX_LEVEL,
+              revealed: state.revealed,
             },
           }
         }).pipe(Effect.orDie),
