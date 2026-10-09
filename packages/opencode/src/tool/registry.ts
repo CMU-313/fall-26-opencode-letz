@@ -4,6 +4,7 @@ import { Ripgrep } from "@opencode-ai/core/ripgrep"
 import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
 import { QuestionTool } from "./question"
+import { HintTool } from "./hint"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
@@ -47,6 +48,7 @@ import { LSP } from "@/lsp/lsp"
 import { Instruction } from "../session/instruction"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { Hint } from "@/hint"
 import { Agent } from "../agent/agent"
 import { Skill } from "../skill"
 import { Permission } from "@/permission"
@@ -101,6 +103,7 @@ const layer = Layer.effect(
     const read = yield* ReadTool
     const directorySummary = yield* DirectorySummaryTool
     const question = yield* QuestionTool
+    const hint = yield* HintTool
     const todo = yield* TodoWriteTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
@@ -224,6 +227,7 @@ const layer = Layer.effect(
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
+          hint: Tool.init(hint),
           lsp: Tool.init(lsptool),
           fileRelations: Tool.init(fileRelations),
           plan: Tool.init(plan),
@@ -235,6 +239,7 @@ const layer = Layer.effect(
           builtin: [
             tool.invalid,
             ...(questionEnabled ? [tool.question] : []),
+            tool.hint,
             tool.shell,
             tool.read,
             tool.directorySummary,
@@ -438,6 +443,7 @@ export const node = LayerNode.make({
     Config.node,
     Plugin.node,
     Question.node,
+    Hint.node,
     Todo.node,
     Agent.node,
     Skill.node,

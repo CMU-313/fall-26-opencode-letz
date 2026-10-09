@@ -151,6 +151,49 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("exposes and executes hint through the registry without modifying source files", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const source = path.join(test.directory, "src", "hint-fixture.ts")
+      const contents = "export const answer = 42\n"
+      yield* Effect.promise(() => fs.mkdir(path.dirname(source), { recursive: true }))
+      yield* Effect.promise(() => Bun.write(source, contents))
+
+      const registry = yield* ToolRegistry.Service
+      expect(yield* registry.ids()).toContain("hint")
+
+      const agents = yield* Agent.Service
+      const agent = yield* agents.defaultInfo()
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.opencode,
+        modelID: ModelV2.ID.make("test"),
+        agent,
+      })
+      const hint = tools.find((tool) => tool.id === "hint")
+      if (!hint) throw new Error("Hint tool was not returned for prompts")
+
+      const context: Tool.Context = {
+        sessionID: SessionID.make("ses_registry-hint"),
+        messageID: MessageID.make("msg_registry-hint"),
+        callID: "hint-call",
+        agent: agent.name,
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+      const problem = "Why does this fixture behave unexpectedly?"
+      const first = yield* hint.execute({ problem }, context)
+      const second = yield* hint.execute({ problem }, context)
+
+      expect(first.title).toBe("Hint 1/3")
+      expect(first.metadata).toMatchObject({ level: 1, revealed: false })
+      expect(second.title).toBe("Hint 2/3")
+      expect(second.metadata).toMatchObject({ level: 2, revealed: false })
+      expect(yield* Effect.promise(() => Bun.file(source).text())).toBe(contents)
+    }),
+  )
+
   it.instance("does not expose task_status", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

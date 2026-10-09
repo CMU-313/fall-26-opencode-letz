@@ -295,3 +295,165 @@ bun test test/tool/directory_summary.test.ts test/tool/parameters.test.ts test/t
 
 - The tests check exact results with `toEqual`, not just that something was returned. They run the real tool, with Bun's real parser, on real files and symlinks, so path resolution and permission checks run end to end. No mocks are used except the permission callback, which records or denies requests.
 - Every bug fixed in Sprint 2 has a regression test that fails on the Sprint 1 code: `#name` imports listed as npm packages, phantom `react` imports from JSX files, workspace packages listed as external before `bun install`, purpose ignoring a `package.json` past the 200-entry limit, and `tsconfig.json` read without asking permission.
+
+## Progressive Debugging Hint Tool (Zdenek Rusek Kotva, Issue [#11](https://github.com/CMU-313/fall-26-opencode-letz/issues/11))
+
+### What it does
+
+`hint` is a built-in agent tool that guides a student through debugging a problem in stages instead of revealing the fix immediately. It is implemented as a tool rather than a slash command, so the agent decides to call it based on conversation context (for example, when a student asks for help debugging rather than an outright fix) instead of requiring the student to know and type a special command.
+
+The hint progression is tracked per session and per problem text:
+
+- **Hints 1–3**: Each call advances the hint level by one. The tool returns instructions that define what the model can explain at that stage and what it must withhold. This includes exact line numbers, literal values, whether a comment is a red herring, and the specific mechanism causing the failure. These restrictions are important because simply asking a model to provide a first-level hint is not enough. If the model has already investigated the bug, it may reveal the diagnosis too early.
+- **After hint 3**: Further calls ask the model to explain the specific root cause and provide the fix, supported by evidence gathered during the investigation. This avoids generic, templated explanations.
+
+The tool never edits or modifies the student's code. Its role is limited to returning guidance for the model to relay, helping students work toward the solution before seeing the full explanation.
+
+### How to use it
+
+The tool is always available to agents. You do not need a feature flag.
+
+1. Install dependencies from the repository root:
+
+   ```sh
+   bun install
+   ```
+   
+2. Start OpenCode:
+
+   ```sh
+   cd packages/opencode
+   bun run dev
+   ```
+  
+3. In an OpenCode session with a working bug to debug, describe it naturally and ask for help without asking for the fix outright. For example:
+
+   > I'm getting a 401 from my login endpoint even with the right credentials. Can you help me think through it instead of just fixing it?
+
+The OpenCode agent will call the `hint` tool based on the conversation context. You do not need to invoke the `hint` tool manually.
+
+4. Request further guidance by asking about the same problem again. Keep the problem description consistent and stay in the same session so the `hint` tool can track your progress through the hint stages. You can simply ask, “Can I have another hint?” to advance to the next hint stage.
+
+The `hint` tool guides you through four hint stages:
+
+* **Hint 1/3 - general direction:** Identifies the likely category of the bug and an area to investigate.
+* **Hint 2/3 - narrower guidance:** Points toward relevant inputs, comparisons, or state transitions.
+* **Hint 3/3 - root-cause clues:** Identifies the most likely cause and the area where a minimal fix may be needed, based on the evidence gathered.
+* **Solution:** On the next request, explains the specific root cause and the precise correction, grounded in the investigation.
+
+### How to user test it
+
+There are two ways to test the `hint` tool: run it directly without a model provider, or test the full hint progression in a live OpenCode session.
+
+#### Option 1: Test a single hint without a model
+
+The `debug agent` command invokes the tool directly, so you can inspect its output without connecting a model provider or using an API key.
+
+From `packages/opencode`, run:
+
+```sh
+bun run --conditions=browser ./src/index.ts debug agent build --tool hint --params '{"problem":"Why does the login endpoint keep returning 401?"}'
+```
+
+The command returns a JSON response containing the tool name, input, result, and metadata. On the first call, expect a title of Hint 1/3 and an output field containing instructions that tell the agent how to guide the student without revealing the solution prematurely. The output is a directive for the agent to relay, not the hint shown to the student.
+
+Each invocation starts a fresh session, so this command always returns hint level 1. It is useful for inspecting the initial response and its metadata, but it cannot demonstrate progression across hint levels.
+
+#### Option 2: Test the hint full progression in a live session
+
+This verifies that hints advance from level 1 through level 3 and then reveal the solution.
+
+**1. Set up a model provider.**
+
+Start OpenCode in development mode:
+
+```sh
+cd packages/opencode
+bun run dev
+```
+
+The default free model returns "OpenCode's free tier can only be used from within OpenCode." So, in the OpenCode session, run `/connect` and configure a model provider. For example, you can create an [OpenRouter](https://openrouter.ai/) account, generate an API key, connect it to OpenCode, and select an available free model.
+
+The default free model may return an error stating that OpenCode's free tier can only be used from within OpenCode when running a development build.
+
+**2. Introduce a test bug.**
+
+For example, in `packages/opencode/src/server/auth.ts`, temporarily change the username check in the authorization function from:
+
+```ts
+credentials.username === config.username
+```
+
+to:
+
+```ts
+credentials.username === "opencode"
+```
+
+This makes the username check use a hardcoded value instead of the configured username. Use this only as a temporary test change, and restore the original code when completed with user testing.
+
+**3. Request hints in the same session.**
+
+Start by describing the bug naturally without asking for the fix outright:
+
+> I'm getting a 401 from my login endpoint even with the right credentials. Can you help me think through it instead of just fixing it?
+
+Then ask for another hint repeatedly, for example:
+
+> Can I have another hint?
+
+Keep using the same session and problem description so the tool can track progression.
+
+**4. Verify each stage.**
+
+* **Hint 1/3 - general direction:** Identifies the likely category of the bug and an area to investigate.
+* **Hint 2/3 - narrower guidance:** Points toward relevant inputs, comparisons, or state transitions.
+* **Hint 3/3 - root-cause clues:** Identifies the most likely cause and the area where a minimal fix may be needed, based on the evidence gathered.
+* **Solution:** On the next request, explains the specific root cause and the precise correction, grounded in the investigation.
+
+Verify that the amount of guidance changes at each stage, becoming more specific until the solution is returned. Also verify that the tool itself does not modify the source file. Again, since you introduced the test bug manually, restore the original code after completing user testing.
+
+### Automated tests
+
+Run from `packages/opencode`:
+```sh
+bun test test/tool/hint.test.ts
+bun test test/tool/registry.test.ts
+```
+
+- `test/tool/hint.test.ts` (4 tests):
+  - **Full hint progression flow**: Verifies that a single session/problem advances through hints 1 → 2 → 3 → solution. Checks exact titles, distinct guidance text at each hint level, and that early hints do not reveal solution-only details. Also verifies that five additional calls after reaching the solution continue returning the solution without resetting or throwing errors.
+  - **Hint progression isolation**: Verifies that different sessions and different problems within the same session maintain independent hint levels. Also tests that a `:`-delimiter collision between a session ID and problem text does not cause distinct progressions to share state.
+  - **Edge-case problem strings**: Tests empty and whitespace-only strings, a 20,000-character string, quotes, punctuation, newlines, and Unicode. Verifies that these inputs are handled without errors and that near-duplicate strings differing only in case or leading whitespace are tracked as distinct problems.
+  - **Deterministic state reads**: Verifies that repeated calls to the read-only `get` method without calling the `next` method does not advance hint progression, ensuring that reading state has no side effects.
+- `test/tool/registry.test.ts` ("exposes and executes hint through the registry without modifying source files"): Verifies that `hint` is registered and exposed to agents through the actual `ToolRegistry`. Executes the tool twice through the registry to verify end-to-end progression, rather than testing only the underlying service. Also verifies that a fixture file on disk remains byte-for-byte unchanged after both calls.
+
+### Why these tests are sufficient
+
+The automated tests cover the core functional and state-management requirements of the progressive debugging hint tool described in Issue [#11](https://github.com/CMU-313/fall-26-opencode-letz/issues/11). Each acceptance criterion relevant to the tool's implemented behavior is covered by at least one automated test:
+
+* **Implemented as an OpenCode tool:** `test/tool/registry.test.ts` verifies that the `hint` tool is registered, exposed through the actual `ToolRegistry`, and executable by an agent.
+
+* **Provides an initial general hint:** `test/tool/hint.test.ts` verifies that the first invocation returns `Hint 1/3` with guidance directing the student toward the general category of the problem while withholding premature details.
+
+* **Provides increasingly specific hints:** The full progression test verifies that successive calls return `Hint 1/3`, `Hint 2/3`, and `Hint 3/3`, with different guidance at each stage. It checks that the hints progress from general direction to specific inputs, comparisons, or state transitions, and finally to the likely root cause and minimal fix area.
+
+* **Provides at least three hint levels before revealing the solution:** The full progression test verifies that the first three calls return hints without marking the solution as revealed, while the fourth call returns `Solution` and sets `revealed` to `true`.
+
+* **Adds guidance instead of repeating previous hints:** The full progression test checks that consecutive hint outputs differ and contain the expected stage-specific instructions.
+
+* **Continues progression for the same debugging problem:** The full progression test verifies that the hint level advances for repeated calls using the same session and exact problem text. The isolation test also verifies that different sessions and different problem descriptions maintain independent progression states.
+
+* **Reveals the full solution after the available hints:** The full progression test checks that the solution response contains the expected solution-stage instructions and that subsequent calls continue returning the solution rather than resetting the progression.
+
+* **Does not automatically modify the student's code:** `test/tool/registry.test.ts` creates a fixture source file, invokes the tool twice through the registry, and verifies that the file's contents remain unchanged. This confirms that the tested tool execution does not modify that source file.
+
+* **Includes new unit tests for expected behavior:** `test/tool/hint.test.ts` covers progression, solution reveal, state isolation, edge-case problem strings, and read-only state access. `test/tool/registry.test.ts` additionally verifies registration, execution through the registry, and source-file preservation.
+
+The tests also cover robustness beyond the main acceptance criteria. They verify that empty strings, whitespace, long inputs, punctuation, newlines, Unicode, and differences in capitalization or leading whitespace do not cause problems to be conflated. They also check that state reads are deterministic and do not advance the progression, and that repeated calls after revealing the solution remain stable. 
+
+Together, these tests provide coverage of the tool's core behavior, progression state, integration with OpenCode's tool registry, and non-modification of source files. They test both the hint service and the registered tool, rather than relying solely on isolated implementation details.
+
+### Known limitations
+
+- Hint progression is tracked using the session ID and problem text. The tool does not determine whether differently worded questions describe the same underlying problem. As a result, substantially rephrasing a question may restart progression at hint 1, even when the student is still debugging the same issue. A possible follow-up is issue [#12](https://github.com/CMU-313/fall-26-opencode-letz/issues/12), which explores context-aware guidance.
