@@ -37,6 +37,16 @@ export function evaluate(permission: string, pattern: string, ...rulesets: Permi
   )
 }
 
+// Which rule decided a request, and which earlier matching rules with a different action it overrode.
+export function explain(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]) {
+  const decidedBy = evaluate(permission, pattern, ...rulesets)
+  const matching = rulesets
+    .flat()
+    .filter((rule) => Wildcard.match(permission, rule.permission) && Wildcard.match(pattern, rule.pattern))
+  const overridden = matching.slice(0, -1).filter((rule) => rule.action !== decidedBy.action)
+  return { decidedBy, overridden }
+}
+
 export class Service extends Context.Service<Service, Interface>()("@opencode/Permission") {}
 
 const layer = Layer.effect(
