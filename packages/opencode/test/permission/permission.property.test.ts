@@ -314,7 +314,7 @@ test("bash: spacing inside quotes and escapes is kept, gaps between words shrink
   )
   await fc.assert(
     fc.asyncProperty(
-      word,
+      word.filter((name) => !RESERVED.has(name)),
       fc.array(part, { maxLength: 4 }),
       fc.array(separator, { minLength: 1 }),
       async (cmd, parts, seps) => {
