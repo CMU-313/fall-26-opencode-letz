@@ -1,6 +1,6 @@
 # Traceability: Ethan Tao (etao)
 
-**Target feature:** opencode permission rules (allow / ask / deny for a tool or shell command). Main source files: `packages/opencode/src/permission/index.ts` (`evaluate`, `fromConfig`, `ask` / `reply`, new `explain`), `packages/core/src/util/wildcard.ts` (`Wildcard.match`), `packages/opencode/src/permission/arity.ts` (`BashArity.prefix`, new `collapseSpaces`), and `packages/opencode/src/tool/shell.ts` (builds the asked and "always" patterns).
+**Target feature:** opencode permission rules (allow / ask / deny for a tool or shell command). Main source files: `packages/opencode/src/permission/index.ts` (`evaluate`, `fromConfig`, `ask` / `reply`, new `explain`), `packages/core/src/util/wildcard.ts` (`Wildcard.match`), `packages/opencode/src/permission/arity.ts` (`BashArity.prefix`), and `packages/opencode/src/tool/shell.ts` (parses the command and builds the asked and "always" patterns).
 
 ## Requirements
 
@@ -30,9 +30,13 @@ R2 and R3 are kept as written: both are checkable on `evaluate` as stated. R2's 
 
 | Property | Shrunk counterexample | Verdict | Action |
 |---|---|---|---|
-| R1 | `ls` approved, then `ls<tab>!` | Code bug: ShellTool asked with the raw command text, and a space in a rule only matches one literal space, so `"ls *"` missed `ls<tab>...`. The same bug let `rm  -rf /` (two spaces) past a `"rm -rf *": "deny"` rule. | Fixed in ShellTool: the asked pattern goes through new `BashArity.collapseSpaces` (runs of spaces/tabs outside quotes become one space; quoted text is kept). A first fix in `Wildcard.match` was dropped after an independent review showed it also loosened path rules and quoted arguments (`/project/my file` would match `/project/my  file`). Added a deny-rule regression test, a quoted-text invariant, and a ShellTool test. |
+| R1 | `ls` approved, then `ls<tab>!` | Code bug: ShellTool asked with the raw command text, and a space in a rule only matches one literal space, so `"ls *"` missed `ls<tab>...`. The same bug let `rm  -rf /` (two spaces) past a `"rm -rf *": "deny"` rule. | Fixed in ShellTool: the asked pattern is rebuilt from the parsed command, with each whitespace gap between parsed words shrunk to one space; text inside a word (quotes, escapes, `$'...'`) is kept exactly. Two earlier attempts were dropped after independent review: a `Wildcard.match` change loosened path rules (`/project/my file` would match `/project/my  file`), and a hand-written quote scanner mis-read bash `$'a\'  b'` and PowerShell `"C:\"`. Added a deny-rule regression test, bash and PowerShell quoted-spacing invariants, and a ShellTool test. |
 | R2 | `a` approved, then `a<tab>""` | Same code bug as R1 | Same fix |
 | R5 | any input | Missing feature (`explain` did not exist) | Added `Permission.explain` |
 | R1 (generator design) | `git -C dir commit` | Requirement problem (see R1 above) | R1 revised; recorded as a known limitation, not fixed |
+| R2 (stress run) | random command name `if` | Wrong test: a bash reserved word is not a command | Generator skips reserved words |
+| PowerShell spacing invariant | `Write-Output  -/  "C:\"` | Wrong test: `-/` is not valid PowerShell | Generator words no longer start with `-` |
 
-Mutation checks: making `collapseSpaces` a no-op makes R1, R2, the regression test, and the quoted-text invariant fail (and the ShellTool test fails without the `shell.ts` change); dropping the action filter in `explain` makes R5 fail; switching `evaluate` from `findLast` to `find` makes the R4 oracle test fail.
+Found, not fixed (out of scope): the PowerShell grammar returns a parse error for `Write-Host<tab>foo` (and for `Write-Output  -/`), so ShellTool finds no command and asks no bash permission at all. This exists on `main` too and only affects PowerShell; a fix needs a fail-closed rule for parse errors.
+
+Mutation checks: making the spacing rebuild a no-op makes R1, R2, the regression test, both spacing invariants, and the ShellTool test fail; putting back the dropped quote scanner makes both spacing invariants fail on the reviewer's cases; dropping the action filter in `explain` makes R5 fail; switching `evaluate` from `findLast` to `find` makes the R4 oracle test fail.
