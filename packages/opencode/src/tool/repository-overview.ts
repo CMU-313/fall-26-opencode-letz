@@ -48,6 +48,7 @@ export const Parameters = Schema.Struct({})
 
 export const MAX_COLLECTION_ITEMS = 100
 export const MAX_WORKSPACE_STEPS = 1000
+export const MAX_TECHNOLOGY_DIRECTORIES = 1000
 export const MAX_TEXT_LENGTH = 1024
 export const MAX_OUTPUT_BYTES = 32 * 1024
 
@@ -201,6 +202,38 @@ export const RepositoryOverviewTool = Tool.define(
               }),
           )
           const technologies = [detectTechnologies(entries, manifest), ...workspaces.map((item) => item.technologies)]
+          // Technology evidence belongs to the repository, not to workspace
+          // membership: a literal declaration can become stale after a rename.
+          const detected = new Set([
+            instance.directory,
+            ...workspaces.map((item) => path.join(instance.directory, item.path)),
+          ])
+          const directories = [instance.directory]
+          for (let index = 0; index < directories.length && index < MAX_TECHNOLOGY_DIRECTORIES; index++) {
+            const directory = directories[index]
+            const files =
+              directory === instance.directory
+                ? entries
+                : yield* fs.readDirectoryEntries(directory).pipe(
+                    Effect.catch(() => {
+                      reasons.add("technologyRead")
+                      return Effect.succeed([])
+                    }),
+                  )
+            if (!detected.has(directory)) {
+              const child = files.some((entry) => entry.type === "file" && entry.name === "package.json")
+                ? yield* readPackageMetadata(directory)
+                : null
+              technologies.push(detectTechnologies(files, child))
+            }
+            directories.push(
+              ...files
+                .filter((entry) => entry.type === "directory" && !EXCLUDED.has(entry.name))
+                .map((entry) => path.join(directory, entry.name))
+                .sort(),
+            )
+          }
+          if (directories.length > MAX_TECHNOLOGY_DIRECTORIES) reasons.add("technologyTraversal")
           const overview = {
             root: text(instance.directory, "root"),
             name: text(path.basename(instance.directory), "name"),

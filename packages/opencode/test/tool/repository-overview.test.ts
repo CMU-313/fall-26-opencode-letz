@@ -10,6 +10,7 @@ import {
   MAX_COLLECTION_ITEMS,
   MAX_OUTPUT_BYTES,
   MAX_TEXT_LENGTH,
+  MAX_TECHNOLOGY_DIRECTORIES,
   RepositoryOverviewTool,
 } from "../../src/tool/repository-overview"
 import { Tool } from "../../src/tool/tool"
@@ -366,10 +367,10 @@ describe("tool.repository_overview", () => {
       frameworks: [],
     },
     {
-      title: "ignores language evidence inside generated directories and deeper source trees",
+      title: "detects nested source languages while excluding generated directories",
       files: ["node_modules/main.ts", "dist/main.js", "build/main.py", "coverage/Main.java", "src/deep/main.rs"],
       manifest: {},
-      languages: [],
+      languages: ["Rust"],
       frameworks: [],
     },
   ]
@@ -463,7 +464,7 @@ describe("tool.repository_overview", () => {
     }),
   )
 
-  it.instance("requests read permission for root and workspace package metadata", () =>
+  it.instance("requests read permission for root, workspace, and non-workspace package metadata", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const fs = yield* FSUtil.Service
@@ -488,15 +489,61 @@ describe("tool.repository_overview", () => {
       yield* fs.writeFileString(path.join(test.directory, "packages/app/index.ts"), "")
       const info = yield* RepositoryOverviewTool
       const tool = yield* info.init()
+      yield* fs.ensureDir(path.join(test.directory, "other/deep"))
+      yield* fs.writeJson(path.join(test.directory, "other/deep/package.json"), { dependencies: { vue: "3" } })
       const result = yield* tool.execute({}, context)
       expect(requests.filter((request) => request.permission === "read").map((request) => request.patterns)).toEqual([
         [path.relative(instance.worktree, path.join(test.directory, "package.json"))],
         [path.relative(instance.worktree, path.join(test.directory, "packages/app/package.json"))],
+        [path.relative(instance.worktree, path.join(test.directory, "other/deep/package.json"))],
       ])
       expect(result.metadata.overview.package).toEqual({ name: "root" })
       expect(result.metadata.overview.workspaces).toEqual([{ path: "packages/app", name: "@example/app" }])
-      expect(result.metadata.overview.frameworks).toContain("React")
+      expect(result.metadata.overview.frameworks).toEqual(["React", "Vue"])
       expect(JSON.parse(result.output)).toEqual(result.metadata.overview)
+    }),
+  )
+
+  it.instance("does not follow symlink directories during independent technology discovery", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      yield* fs.ensureDir(path.join(test.directory, "node_modules/hidden"))
+      yield* fs.writeJson(path.join(test.directory, "node_modules/hidden/package.json"), { dependencies: { vue: "3" } })
+      yield* fs.writeFileString(path.join(test.directory, "node_modules/hidden/main.py"), "")
+      yield* fs.symlink(path.join(test.directory, "node_modules/hidden"), path.join(test.directory, "linked"))
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({}, ctx)
+      expect(result.metadata.overview.languages).toEqual([])
+      expect(result.metadata.overview.frameworks).toEqual([])
+      expect(result.metadata.overview.folders).toEqual([])
+    }),
+  )
+
+  it.instance("reports deterministic partial technology detection only when its directory budget is exceeded", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const fs = yield* FSUtil.Service
+      // The root counts as one visit. The final eligible directory is still read.
+      const folders = Array.from(
+        { length: MAX_TECHNOLOGY_DIRECTORIES - 1 },
+        (_, index) => `dir-${String(index).padStart(4, "0")}`,
+      )
+      yield* Effect.forEach(folders.toReversed(), (name) => fs.ensureDir(path.join(test.directory, name)))
+      yield* fs.writeFileString(path.join(test.directory, folders[folders.length - 1], "main.py"), "")
+      const info = yield* RepositoryOverviewTool
+      const tool = yield* info.init()
+      const before = yield* tool.execute({}, ctx)
+      expect(before.metadata.overview.languages).toEqual(["Python"])
+      expect(before.metadata.overview.truncationReasons).toEqual(["folders"])
+      yield* fs.ensureDir(path.join(test.directory, "zz-extra"))
+      yield* fs.writeFileString(path.join(test.directory, "zz-extra/main.rs"), "")
+      const after = yield* tool.execute({}, ctx)
+      expect(after.metadata.overview.languages).toEqual(["Python"])
+      expect(after.metadata.overview.truncationReasons).toEqual(["folders", "technologyTraversal"])
+      expect(after.metadata.overview.truncated).toBe(true)
+      expect((yield* tool.execute({}, ctx)).output).toBe(after.output)
     }),
   )
 
