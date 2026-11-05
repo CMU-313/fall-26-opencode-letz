@@ -3,9 +3,15 @@ import fc from "fast-check"
 import type { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { Permission } from "../../src/permission"
 import { BashArity } from "../../src/permission/arity"
+import { permissionPatterns } from "../../src/tool/shell"
 
 type Rule = PermissionV1.Rule
 type Action = Rule["action"]
+
+// Bash reserved words are not commands, so random names skip them.
+const RESERVED = new Set(
+  "if then else elif fi case esac for select while until do done in function time coproc".split(" "),
+)
 
 // Generators.
 // Commands are a real "human command" (from BashArity's table, incl. multi-token
@@ -22,7 +28,10 @@ const commandName = fc.oneof(
     ["npm", "run", "dev"],
     ["docker", "compose", "up"],
   ),
-  fc.stringMatching(/^[a-z][a-z0-9_-]{0,7}$/).map((name) => [name]),
+  fc
+    .stringMatching(/^[a-z][a-z0-9_-]{0,7}$/)
+    .filter((name) => !RESERVED.has(name))
+    .map((name) => [name]),
 )
 
 // Args hit the boundaries interviewees cared about: flags (-rf, --force),
@@ -37,8 +46,23 @@ const arg = fc.oneof(
 const args = fc.array(arg, { maxLength: 4 })
 
 // Raw shell source keeps the user's spacing, so tokens may be split by
-// several spaces or a tab, not just one space.
+// several spaces or a tab, not just one space. R1/R2 run the text through
+// ShellTool's real parser (permissionPatterns) to get the asked pattern.
 const separator = fc.constantFrom(" ", "  ", "\t")
+
+// Single-quote anything that is not a plain word, so each arg stays one shell
+// word (metacharacters like | ( $ would otherwise split the command).
+function quote(token: string) {
+  if (/^[A-Za-z0-9_.\/=:,@+%-]+$/.test(token)) return token
+  return "'" + token.replaceAll("'", "'\\''") + "'"
+}
+
+// The single pattern ShellTool asks for when the user runs this text.
+async function asked(text: string) {
+  const patterns = await permissionPatterns(text)
+  expect(patterns).toHaveLength(1)
+  return patterns[0]
+}
 
 function join(tokens: string[], separators: string[]) {
   return tokens.map((token, i) => (i === 0 ? token : separators[i % separators.length] + token)).join("")
@@ -58,21 +82,22 @@ function approve(tokens: string[]): Rule {
 // that differ only in their arguments (same command, e.g. git commit) are also
 // allowed without asking again.
 // Kind: metamorphic (changing only the arguments must not change the result)
-test("R1: after always-allow, the same command with different arguments is allowed", () => {
-  fc.assert(
-    fc.property(
+test("R1: after always-allow, the same command with different arguments is allowed", async () => {
+  await fc.assert(
+    fc.asyncProperty(
       commandName,
       args,
       args,
       fc.array(separator, { minLength: 1, maxLength: 4 }),
-      (name, argsA, argsB, seps) => {
-        const first = [...name, ...argsA]
+      async (name, argsA, argsB, seps) => {
+        const first = [...name, ...argsA.map(quote)]
         const human = BashArity.prefix(first)
-        const second = [...human, ...argsB]
+        const second = [...human, ...argsB.map(quote)]
         // "Same command" means BashArity sees the same human command for both.
         fc.pre(BashArity.prefix(second).join(" ") === human.join(" "))
         const approved = [approve(first)]
-        expect(Permission.evaluate("bash", join(second, seps), approved).action).toBe("allow")
+        const pattern = await asked(join(second, seps))
+        expect(Permission.evaluate("bash", pattern, approved).action).toBe("allow")
       },
     ),
   )
@@ -104,21 +129,21 @@ const configRules = fc.array(
 // R2: After the user picks "always allow" for a command, the tool does not ask
 // about that same command again for the rest of the session.
 // Kind: invariant (every later evaluation in the session stays "allow")
-test("R2: an always-allowed command stays allowed for the rest of the session", () => {
-  fc.assert(
-    fc.property(
+test("R2: an always-allowed command stays allowed for the rest of the session", async () => {
+  await fc.assert(
+    fc.asyncProperty(
       configRules,
       commandName,
       args,
       fc.array(fc.tuple(commandName, args), { maxLength: 4 }),
       fc.integer({ min: 1, max: 5 }),
       fc.array(separator, { minLength: 1, maxLength: 3 }),
-      (config, name, rest, laterApprovals, repeats, seps) => {
-        const tokens = [...name, ...rest]
-        const command = join(tokens, seps)
+      async (config, name, rest, laterApprovals, repeats, seps) => {
+        const tokens = [...name, ...rest.map(quote)]
+        const command = await asked(join(tokens, seps))
         fc.pre(Permission.evaluate("bash", command, config).action !== "deny")
         // Session approvals only grow, and only with allow rules.
-        const approved = [approve(tokens), ...laterApprovals.map(([n, a]) => approve([...n, ...a]))]
+        const approved = [approve(tokens), ...laterApprovals.map(([n, a]) => approve([...n, ...a.map(quote)]))]
         for (let i = 0; i < repeats; i++) {
           expect(Permission.evaluate("bash", command, config, approved).action).toBe("allow")
         }
@@ -261,9 +286,62 @@ test("R5: explain names the deciding rule and the rules it overrode", () => {
 
 // Regression for the whitespace fix found by R1/R2: extra spaces or a tab
 // must not slip a command past a deny rule.
-test('deny rule "rm -rf *" still applies with extra spaces or tabs', () => {
+test('deny rule "rm -rf *" still applies with extra spaces or tabs', async () => {
   const ruleset = Permission.fromConfig({ bash: { "*": "allow", "rm -rf *": "deny" } })
   for (const command of ["rm -rf /", "rm  -rf /", "rm\t-rf /"]) {
-    expect(Permission.evaluate("bash", command, ruleset).action).toBe("deny")
+    expect(Permission.evaluate("bash", await asked(command), ruleset).action).toBe("deny")
   }
+})
+
+// The fix must not loosen quoted arguments: spacing inside a quoted or escaped
+// part is part of the argument, so only the gaps between parts shrink.
+// Generators: plain words plus bash "..", '..', $'..' (with an escaped quote)
+// and backslash-escaped spaces; PowerShell adds "C:\" (no backslash escape).
+// PowerShell gaps use spaces only: its grammar already fails on a tab after
+// the command name (no command is found at all), which is out of scope here.
+// Kind: invariant
+const inner = fc
+  .array(fc.constantFrom("a", " ", "  ", "\t", "b"), { minLength: 1, maxLength: 5 })
+  .map((x) => x.join(""))
+const word = fc.stringMatching(/^[a-z0-9.\/-]{1,6}$/)
+test("bash: spacing inside quotes and escapes is kept, gaps between words shrink", async () => {
+  const part = fc.oneof(
+    word,
+    inner.map((x) => `"${x}"`),
+    inner.map((x) => `'${x}'`),
+    inner.map((x) => `$'\\'${x}'`),
+    word.map((x) => `${x}\\  ${x}`),
+  )
+  await fc.assert(
+    fc.asyncProperty(
+      word,
+      fc.array(part, { maxLength: 4 }),
+      fc.array(separator, { minLength: 1 }),
+      async (cmd, parts, seps) => {
+        expect(await asked(join([cmd, ...parts], seps))).toBe([cmd, ...parts].join(" "))
+      },
+    ),
+  )
+})
+
+test("powershell: spacing inside quotes is kept, gaps between words shrink", async () => {
+  // A leading "-" makes a PowerShell parameter, and "-/" is not valid syntax.
+  const psWord = fc.stringMatching(/^[a-z0-9.\/][a-z0-9.\/-]{0,5}$/)
+  const part = fc.oneof(
+    psWord,
+    inner.map((x) => `"${x}"`),
+    inner.map((x) => `'${x}'`),
+    fc.constant('"C:\\"'),
+  )
+  const gap = fc.constantFrom(" ", "  ", "   ")
+  await fc.assert(
+    fc.asyncProperty(
+      fc.array(part, { minLength: 1, maxLength: 4 }),
+      fc.array(gap, { minLength: 1 }),
+      async (parts, gaps) => {
+        const command = ["Write-Output", ...parts]
+        expect(await permissionPatterns(join(command, gaps), true)).toEqual([command.join(" ")])
+      },
+    ),
+  )
 })
