@@ -1,0 +1,42 @@
+# Traceability: Ethan Tao (etao)
+
+**Target feature:** opencode permission rules (allow / ask / deny for a tool or shell command). Main source files: `packages/opencode/src/permission/index.ts` (`evaluate`, `fromConfig`, `ask` / `reply`, new `explain`), `packages/core/src/util/wildcard.ts` (`Wildcard.match`), `packages/opencode/src/permission/arity.ts` (`BashArity.prefix`), and `packages/opencode/src/tool/shell.ts` (parses the command and builds the asked and "always" patterns).
+
+## Requirements
+
+All tests are in `packages/opencode/test/permission/permission.property.test.ts`.
+
+| ID | Interview evidence | Requirement | Acceptance Criteria | Changed in P4? | Property (kind) | Test |
+|---|---|---|---|---|---|---|
+| R1 | S-3, O-2 | When the user picks "always allow" for a shell command, later commands that run the same command (same `BashArity` prefix, e.g. `git commit`) and differ only in the arguments after it are also allowed without asking again, however many spaces or tabs separate the words. Commands that put flags before the subcommand (`git -C dir commit`) are out of scope. | User picks "always allow" for `git commit -m "first"`. The agent then runs `git commit -m "second"` (or `git commit\t-m "second"`) with no prompt. `git commitx` still asks. | Yes | Same command with different args stays allowed (metamorphic); lookalike command is not covered (invariant) | "R1: after always-allow, the same command with different arguments is allowed"; "R1: always-allow does not cover a different command that shares a prefix" |
+| R2 | S-12, C-11, O-10 | After the user picks "always allow" for a command, the tool does not ask about that same command again for the rest of the session. | User picks "always allow" for `ls`. The agent then runs `ls` three more times in the same session, and the user sees zero further prompts. | No | Every later evaluation in the session stays allow, whatever the config and later approvals (invariant) | "R2: an always-allowed command stays allowed for the rest of the session" |
+| R3 | S-6, C-6, O-4 | If the config has a catch-all `"*": "allow"` and no other rule matches, every command is allowed, including destructive ones. | With only the rule `{"*": "allow"}`, `rm file.txt`, `git push --force`, and `gh pr merge 12` all evaluate to allow and run with no prompt. | No | Any permission and any command evaluates to allow (invariant) | "R3: with only {"*": "allow"}, every command is allowed" |
+| R4 | S-9, S-11 | Rules that cannot both match the same command give the same result in any order. Order only matters between rules that overlap, and then the later rule wins (last match wins). | `{"rm *": "deny", "git push *": "ask"}` in either order gives deny for `rm file.txt` and ask for `git push`. `{"*": "ask", "rm *": "deny"}` gives deny for `rm file.txt` and ask for `ls`; in reverse order `rm file.txt` gives ask, because the later `"*"` overlaps and wins. | Yes | `evaluate` agrees with a plain last-match-wins reference (model/oracle); shuffling non-overlapping rules keeps the result (metamorphic) | "R4: evaluate agrees with a last-match-wins reference model"; "R4: reordering rules that cannot both match the command does not change the result"; "R4: {"*": "ask", "rm *": "deny"} denies rm, and reversed order asks" |
+| R5 | S-10, S-8 | When a command matches more than one rule with different actions, the permission system reports which rule decided the outcome and which earlier matching rules with a different action it overrode. | With rules `{"*": "ask", "rm *": "deny"}`, `Permission.explain("bash", "rm file.txt", rules)` returns `decidedBy` = `"rm *"` (deny) and `overridden` = [`"*"` (ask)]. | Yes | `decidedBy` equals `evaluate`'s result and `overridden` equals every earlier matching rule with a different action (invariant) | "R5: explain names the deciding rule and the rules it overrode" |
+
+Properties written or suggested by opencode or another AI tool: R1, R2, R3, R4, R5 (properties and generators written by an AI coding assistant; reviewed by me).
+
+## Requirement changes
+
+| ID | Original requirement (P3) | Revised requirement | Why it changed |
+|---|---|---|---|
+| R1 | When the user picks "always allow" for a shell command, later commands that differ only in their arguments (same command, e.g. git commit) are also allowed without asking again. | Same, with "same command" defined as the same `BashArity` prefix, any spaces or tabs between words, and flag-before-subcommand commands (`git -C dir commit`) out of scope. | Checkability and feasibility. "Same command" had no testable definition. The property found that a tab between words made the user re-confirm (a code bug, fixed). It also found that `git -C dir commit` produces the always-pattern `git -C *`, which then allows `git -C dir push --force`. Fixing that needs a redesign of `BashArity`, so the case is scoped out and recorded as a known limitation. |
+| R4 | The same set of rules gives the same result for a command no matter what order the rules are written in. | Rules that cannot both match the same command give the same result in any order; between overlapping rules the later one wins. | Conflict. opencode deliberately uses last-match-wins, and it is documented and covered by existing tests ("evaluate - last matching rule wins", "evaluate - wildcard at end overrides earlier exact match"). Order-independence for overlapping rules would break them. The user's real need (not having to think about order) is kept for every pair of rules that don't overlap. |
+| R5 | When a command matches more than one rule with different actions, the tool tells the user which rule decided the outcome and which rules it overrode. | The permission system reports (via `Permission.explain`) the deciding rule and the earlier matching rules with a different action that it overrode. | Checkability and feasibility. No such message existed (`DeniedError` only carries the permission-filtered ruleset), and message wording can't be checked by a property. The new pure helper returns the data the message needs, and that data is checkable. Showing it in the prompt UI is left for later work. |
+
+R2 and R3 are kept as written: both are checkable on `evaluate` as stated. R2's property did fail at first, but on a code bug (tabs), not a requirement problem.
+
+## Triage of failures
+
+| Property | Shrunk counterexample | Verdict | Action |
+|---|---|---|---|
+| R1 | `ls` approved, then `ls<tab>!` | Code bug: ShellTool asked with the raw command text, and a space in a rule only matches one literal space, so `"ls *"` missed `ls<tab>...`. The same bug let `rm  -rf /` (two spaces) past a `"rm -rf *": "deny"` rule. | Fixed in ShellTool: the asked pattern is rebuilt from the parsed command, with each whitespace gap between parsed words shrunk to one space; text inside a word (quotes, escapes, `$'...'`) is kept exactly. Two earlier attempts were dropped after independent review: a `Wildcard.match` change loosened path rules (`/project/my file` would match `/project/my  file`), and a hand-written quote scanner mis-read bash `$'a\'  b'` and PowerShell `"C:\"`. Added a deny-rule regression test, bash and PowerShell quoted-spacing invariants, and a ShellTool test. |
+| R2 | `a` approved, then `a<tab>""` | Same code bug as R1 | Same fix |
+| R5 | any input | Missing feature (`explain` did not exist) | Added `Permission.explain` |
+| R1 (generator design) | `git -C dir commit` | Requirement problem (see R1 above) | R1 revised; recorded as a known limitation, not fixed |
+| R2 (stress run) | random command name `if` | Wrong test: a bash reserved word is not a command | Generator skips reserved words |
+| PowerShell spacing invariant | `Write-Output  -/  "C:\"` | Wrong test: `-/` is not valid PowerShell | Generator words no longer start with `-` |
+
+Found, not fixed (out of scope): the PowerShell grammar returns a parse error for `Write-Host<tab>foo` (and for `Write-Output  -/`), so ShellTool finds no command and asks no bash permission at all. This exists on `main` too and only affects PowerShell; a fix needs a fail-closed rule for parse errors.
+
+Mutation checks: making the spacing rebuild a no-op makes R1, R2, the regression test, both spacing invariants, and the ShellTool test fail; putting back the dropped quote scanner makes both spacing invariants fail on the reviewer's cases; dropping the action filter in `explain` makes R5 fail; switching `evaluate` from `findLast` to `find` makes the R4 oracle test fail.

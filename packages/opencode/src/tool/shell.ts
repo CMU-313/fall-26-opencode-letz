@@ -117,7 +117,38 @@ function parts(node: Node) {
 }
 
 function source(node: Node) {
-  return (node.parent?.type === "redirected_statement" ? node.parent.text : node.text).trim()
+  return spaced(node.parent?.type === "redirected_statement" ? node.parent : node).trim()
+}
+
+const NESTED = new Set(["command", "command_elements", "file_redirect"])
+const isGap = (text: string) => /^[ \t]+$/.test(text)
+
+// Rebuild a command's text with each whitespace gap between its parsed parts
+// shrunk to one space, so spacing can't change which permission rule matches.
+// Text inside a part (quotes, escapes, $'...') is kept exactly.
+function spaced(node: Node): string {
+  const text = node.text
+  let out = ""
+  let cursor = 0
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i)
+    if (!child) continue
+    const at = text.indexOf(child.text, cursor)
+    if (at < 0) return text
+    const gap = text.slice(cursor, at)
+    out += isGap(gap) ? " " : gap
+    if (child.type === "command_argument_sep" && isGap(child.text)) out += " "
+    else out += NESTED.has(child.type) ? spaced(child) : child.text
+    cursor = at + child.text.length
+  }
+  return out + text.slice(cursor)
+}
+
+// The permission patterns ShellTool asks for, one per command (used by tests).
+export async function permissionPatterns(command: string, ps = false) {
+  const tree = (await parser())[ps ? "ps" : "bash"].parse(command)
+  if (!tree) throw new Error("Failed to parse command")
+  return commands(tree.rootNode).map(source)
 }
 
 function commands(node: Node) {
