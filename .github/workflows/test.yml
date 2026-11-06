@@ -57,6 +57,11 @@ jobs:
             turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
             turbo-${{ runner.os }}-
 
+      - name: Run directory_summary properties
+        working-directory: packages/opencode
+        timeout-minutes: 5
+        run: bun test --timeout 60000 test/tool/directory_summary.property.test.ts
+
       - name: Run unit tests
         timeout-minutes: 15
         # Default turbo concurrency (10) oversubscribes ubuntu-latest's 4
@@ -71,7 +76,8 @@ jobs:
 
   e2e:
     name: e2e (smoke)
-    runs-on: ubuntu-latest
+    # This Playwright version does not provide Chromium for Ubuntu 26.04.
+    runs-on: ubuntu-24.04
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
       # Default CI worker count (5) oversubscribes a standard GitHub-hosted
