@@ -12,6 +12,8 @@ import { Tool } from "../../src/tool/tool"
 import { Truncate } from "../../src/tool/truncate"
 import { TestInstance, withTmpdirInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+// Project 5: Use reproducible generated inputs for mutation testing.
+fc.configureGlobal({ seed: 20261111 })
 
 const it = testEffect(LayerNode.compile(LayerNode.group([FSUtil.node, Truncate.node, Agent.node])))
 const ctx = {
@@ -220,16 +222,30 @@ requirements.forEach((requirement) => {
                   expect(after.metadata.overview.frameworks).toEqual(["React"])
                   return
                 }
+
                 if (requirement.id === "R4") {
-                  // README always changes importantFiles, even if languages already include TS.
-                  yield* fs.writeFileString(path.join(test.directory, `README-${token}.md`), "temporary")
+                  // A non-README file must not change the important-files overview.
+                  // This catches regex mutants that remove the beginning-of-name anchor.
+                  const unrelated = path.join(test.directory, `NOTREADME-${token}.md`)
+                  yield* fs.writeFileString(unrelated, "unrelated")
+                  const ignored = yield* tool.execute({}, ctx)
+                  expect(ignored.output).toBe(before.output)
+                  expect(ignored.metadata).toEqual(before.metadata)
+                  yield* fs.remove(unrelated)
+
+                  // A recognized README must change the overview.
+                  const readme = path.join(test.directory, `README-${token}.md`)
+                  yield* fs.writeFileString(readme, "temporary")
                   expect((yield* tool.execute({}, ctx)).output).not.toBe(before.output)
-                  yield* fs.remove(path.join(test.directory, `README-${token}.md`))
+
+                  // Removing the README must restore the original overview.
+                  yield* fs.remove(readme)
                   const after = yield* tool.execute({}, ctx)
                   expect(after.output).toBe(before.output)
                   expect(after.metadata).toEqual(before.metadata)
                   return
                 }
+
               }).pipe(withTmpdirInstance(), Effect.scoped, Effect.provide(services), Effect.runPromise)
             },
           ),

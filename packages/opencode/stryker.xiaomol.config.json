@@ -1,0 +1,18 @@
+
+{
+  "$schema": "https://json.schemastore.org/stryker-schema.json",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "bun test test/tool/repository-overview.property.test.ts"
+  },
+  "mutate": [
+    "src/tool/repository-overview.ts"
+  ],
+  "coverageAnalysis": "off",
+  "reporters": [
+    "html",
+    "clear-text",
+    "progress"
+  ],
+  "concurrency": 2
+}

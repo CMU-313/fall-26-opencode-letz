@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/tool/repository-overview.ts b/packages/opencode/src/tool/repository-overview.ts
+index 9bdda5f..c5f5f58 100644
+--- a/packages/opencode/src/tool/repository-overview.ts
++++ b/packages/opencode/src/tool/repository-overview.ts
+@@ -208,7 +208,7 @@ export const RepositoryOverviewTool = Tool.define(
+             instance.directory,
+             ...workspaces.map((item) => path.join(instance.directory, item.path)),
+           ])
+-          const directories = [instance.directory]
++          const directories: string[] = []
+           for (let index = 0; index < directories.length && index < MAX_TECHNOLOGY_DIRECTORIES; index++) {
+             const directory = directories[index]
+             const files =

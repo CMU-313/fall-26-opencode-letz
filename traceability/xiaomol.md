@@ -3,6 +3,28 @@
 
 **Target feature:** repository_overview
 
+## Current status — November 11, 2026
+
+This traceability document includes historical Project 4 analysis and the subsequent Project 5 mutation-testing work. Earlier statements about uncommitted changes, pending dependency coordination, and unverified CI refer to the state of the repository when those sections were written.
+
+Since those reviews:
+
+- The original Project 4 R1/R5 production fixes and property-based tests have been retained.
+- The team merged Stryker dependency PR #24 into `main` (merge commit `f845395`), adding `@stryker-mutator/core` 10.1.1.
+- The updated team `main` was merged into the local `xiaomol/properties` branch (merge commit `6aca6b6`).
+- The Project 5 work includes five handwritten mutants, Stryker mutation reports, strengthened R4 coverage, and an opencode Agent Failure Case.
+- The original production implementation has been restored after the controlled mutation experiments.
+- Local validation of the four original properties and the strengthened agent property passed: 5 tests, 0 failures, 1,850 assertions.
+
+Final Project 5 property validation command (run from `packages/opencode`):
+`bun test test/tool/repository-overview.property.test.ts test/tool/repository-overview.agent.test.ts`
+
+Result: **5 passed, 0 failed, 1,850 assertions across 250 generated cases.**
+
+The Project 5 changes described here are local working-tree changes pending final commit, push, and pull-request verification. The successful CI checks for PR #24 apply to the dependency change and should not be interpreted as CI validation of the full Project 5 submission.
+
+R3 and R7 remain outstanding requirements, as documented in the earlier analysis.
+
 **Current R1/R5 status:** the nested-language and literal-workspace-rename defects
 are now fixed; see “R1/R5 production fixes and strengthened properties” below.
 Earlier review findings describe the pre-fix implementation. R3 and R7 remain
@@ -12,18 +34,18 @@ unchanged and unresolved.
 
 ## Requirements
 
-| ID | Interview evidence | Requirement | Acceptance Criteria | Changed in P4? | Property (kind) | Test |
-|---|---|---|---|---|---|---|
-| R1 | C-1, C-2, S-3, S-4, O-6 | The tool should display the repository's main directories, important files, and detected programming languages. | Given a repository containing frontend/, backend/, package.json, .tsx files and .py files, the overview identifies both main directories, package.json, TypeScript and Python. | No | Generated repositories report expected directories, files, and languages (model/oracle) | `packages/opencode/test/tool/repository-overview.property.test.ts` |
-| R2 | C-4, C-5, O-4, O-11, O-12 | The tool must exclude dependency directories and sensitive file contents from the overview. | Given a repository with node_modules/, .git/, and .env containing API_KEY='secret', the overview does not include files inside the excluded directories or expose 'secret'. | No | Excluded directories and sensitive file contents never appear (invariant) | `packages/opencode/test/tool/repository-overview.property.test.ts` |
-| R3 | C-6, S-6, S-10, S-13, O-9, O-10 | The overview should report high-level repository structure and recognized important files without individually describing ordinary implementation files. | Given a repository with 100 small UI component files and one main application entry-point file, the overview includes the entry point but does not individually describe all 100 UI files. | Yes | — | — |
-| R4 | C-9, S-9, S-12, O-16 | When a file is added and later deleted, rerunning the tool should produce the same repository overview as before, assuming the final repository contents are unchanged. | Generate overview A, add temporary.ts, delete it, and generate overview B. The repository-content sections of A and B are identical. | No | Adding and deleting a temporary file restores the original overview (round-trip) | `packages/opencode/test/tool/repository-overview.property.test.ts` |
-| R5 | C-10, C-11, S-14, S-16, O-17, O-18 | When a directory is renamed without changing its contents, the overview must update the affected directory paths while preserving unrelated programming language and framework information. | Rename user/ to client/ without modifying any files. The updated overview shows client/ instead of user/, while the detected languages and frameworks remain unchanged. | No | Renaming a folder updates its path while preserving languages and frameworks (metamorphic) | `packages/opencode/test/tool/repository-overview.property.test.ts` |
-| R6 | S-7, S-8, S-20 | The tool should provide repository structure information beyond the README rather than only repeating the README's description. | Given a repository whose README contains only "A task management application" and whose directories include src/ and tests/, the overview identifies the repository directories in addition to the description. | No | — | — |
-| R7 | S-18, S-19 | The tool should indicate when or from which repository version the overview was generated. | Given a repository at commit abc123, the generated overview includes that commit identifier. After a new commit def456, a newly generated overview identifies def456. | No | — | — |
-| R8 | O-3 | The tool should generate an overview from a local repository regardless of its remote hosting platform. | Given two local repositories with identical files, one configured with a GitHub remote and the other with a Bitbucket remote, the tool successfully generates equivalent repository-content overviews for both. | No | — | — |
+| ID | Interview evidence | Requirement | Acceptance Criteria | Changed in P4? | Property (kind) | Test | Mutants it kills |
+|---|---|---|---|---|---|---|---|
+| R1 | C-1, C-2, S-3, S-4, O-6 | The tool should display the repository's main directories, important files, and detected programming languages. | Given a repository containing frontend/, backend/, package.json, .tsx files and .py files, the overview identifies both main directories, package.json, TypeScript and Python. | No | Generated repositories report expected directories, files, and languages (model/oracle) | `packages/opencode/test/tool/repository-overview.property.test.ts` | H1 (confirmed); H5 (killed by the property suite, and independently confirmed by the strengthened agent R1 property); H4 (suite failure observed, individual R1 failure not confirmed) |
+| R2 | C-4, C-5, O-4, O-11, O-12 | The tool must exclude dependency directories and sensitive file contents from the overview. | Given a repository with node_modules/, .git/, and .env containing API_KEY='secret', the overview does not include files inside the excluded directories or expose 'secret'. | No | Excluded directories and sensitive file contents never appear (invariant) | `packages/opencode/test/tool/repository-overview.property.test.ts` | H1 (preliminary language assertion); H2 (confirmed, direct invariant violation) |
+| R3 | C-6, S-6, S-10, S-13, O-9, O-10 | The overview should report high-level repository structure and recognized important files without individually describing ordinary implementation files. | Given a repository with 100 small UI component files and one main application entry-point file, the overview includes the entry point but does not individually describe all 100 UI files. | Yes | — | — | — |
+| R4 | C-9, S-9, S-12, O-16 | When a file is added and later deleted, rerunning the tool should produce the same repository overview as before, assuming the final repository contents are unchanged. | Generate overview A, add temporary.ts, delete it, and generate overview B. The repository-content sections of A and B are identical. | No | Adding and deleting a temporary file restores the original overview (round-trip) | `packages/opencode/test/tool/repository-overview.property.test.ts` | H1 (preliminary language assertion); H3 (confirmed, intermediate-state assertion) |
+| R5 | C-10, C-11, S-14, S-16, O-17, O-18 | When a directory is renamed without changing its contents, the overview must update the affected directory paths while preserving unrelated programming language and framework information. | Rename user/ to client/ without modifying any files. The updated overview shows client/ instead of user/, while the detected languages and frameworks remain unchanged. | No | Renaming a folder updates its path while preserving languages and frameworks (metamorphic) | `packages/opencode/test/tool/repository-overview.property.test.ts` | H1 (initial language assertion); H4 (confirmed, post-rename folder assertion); H5 (confirmed, post-rename technology preservation assertion) |
+| R6 | S-7, S-8, S-20 | The tool should provide repository structure information beyond the README rather than only repeating the README's description. | Given a repository whose README contains only "A task management application" and whose directories include src/ and tests/, the overview identifies the repository directories in addition to the description. | No | — | — | — |
+| R7 | S-18, S-19 | The tool should indicate when or from which repository version the overview was generated. | Given a repository at commit abc123, the generated overview includes that commit identifier. After a new commit def456, a newly generated overview identifies def456. | No | — | — | — |
+| R8 | O-3 | The tool should generate an overview from a local repository regardless of its remote hosting platform. | Given two local repositories with identical files, one configured with a GitHub remote and the other with a Bitbucket remote, the tool successfully generates equivalent repository-content overviews for both. | No | — | — | — |
 
-Properties written or suggested by opencode or another AI tool: R1, R2, R4, R5. ChatGPT/Codex inspected the code and fixtures, wrote these properties and the P4 audit below, and ran local validation. Interview evidence identifiers and acceptance criteria are preserved; no new interview evidence was inferred.
+AI assistance: The original R1, R2, R4, and R5 properties and generators were developed with assistance from ChatGPT/Codex. During Project 5, opencode was also used to generate and subsequently strengthen a separate R1 important-file recognition property. The prompts, responses, implementation changes, and mutation experiment are documented in the Agent Failure Case section and exported transcripts. All properties were reviewed and validated against their corresponding requirements.
 
 ## Requirement changes
 
@@ -52,7 +74,7 @@ acceptance criteria.
 
 ## Properties and generator rationale
 
-All properties live in `packages/opencode/test/tool/repository-overview.property.test.ts`.
+The four original Project 4 properties (R1, R2, R4, and R5) live in `packages/opencode/test/tool/repository-overview.property.test.ts`. Project 5 also introduces a separate opencode-generated and subsequently strengthened R1 property in `packages/opencode/test/tool/repository-overview.agent.test.ts`. The generator rationale below describes the original four properties.
 Each test name explicitly includes its requirement ID, full wording, and kind.
 Each runs 50 fast-check cases (200 total), with fresh state for every sample and shrink.
 Failures propagate to fast-check for a seed, shrink path, and counterexample; no
@@ -65,14 +87,15 @@ precondition skips or swallowed assertion failures are used.
   The oracle requires exact folders, important files, and the sorted union of Python,
   TypeScript, and generated languages. JSON must match metadata and no truncation is
   permitted. Thus the P3 nested source case cannot be bypassed by root placement.
+
 - **R2 — invariant:** varied baseline repositories and random 8–32 character secret
   tokens; every one of the 14 excluded directory names is inserted at root and inside
   a potential workspace, with hostile package metadata and language evidence. Wildcard
   workspace discovery must still exclude these directories. Exact workspace, folder,
   language, and framework assertions plus secret and `.env` absence prevent false positives.
-- **R4 — round-trip:** varied language baselines and generated temporary README names.
-  Adding a recognized README must visibly change output; deleting it must restore
-  exact output and metadata. This checks reruns observe filesystem changes.
+
+- **R4 — round-trip:** varied language baselines and generated temporary README filenames. The strengthened property first adds a `NOTREADME-${token}.md` file and verifies that it does not change the overview, checking false-positive README recognition. It then adds a valid `README-${token}.md` file and requires a visible change. Removing the temporary files must restore the exact original output and metadata. This tests both recognition boundaries and round-trip consistency.
+
 - **R5 — metamorphic:** every sample uses the literal workspace declaration ["user"],
   a user/ folder with React and nonempty generated source evidence at its root and
   nested paths, plus unrelated root Vue/JavaScript evidence. Rename only user/ to
@@ -255,3 +278,218 @@ changes were made in this follow-up. The user's pre-existing dependency changes 
 preserved. ChatGPT/Codex assisted with the production fix, regression properties,
 validation, and traceability update. No commits, pushes, branch changes, or PR creation
 were performed. R3 and R7 remain outstanding as previously documented.
+
+## Project 5: Hand-written mutants
+
+| ID | Requirement targeted | Change | Predicted killer | Actual result |
+|---|---|---|---|---|
+| H1 | R1 | Incorrectly map TypeScript React files (.tsx) to JavaScript rather than TypeScript. | R1 model/oracle should kill this mutant because every generated repository contains a nested .tsx file and the expected languages include TypeScript. | **Killed** — All four existing properties failed (R1, R2, R4, R5). R1 directly detected that `.tsx` files were classified as JavaScript instead of TypeScript. R2 and R4 failed at their preliminary language assertions, while R5 detected missing TypeScript in its initial language comparison. Fast-check shrank R1 to a counterexample containing a single `.tsx` language entry. The mutation demonstrates that the R1 model/oracle checks language classification and that other properties share overlapping language assertions. |
+| H2 | R2 | Remove node_modules from EXCLUDED, allowing dependency directories to be scanned. | R2 invariant should kill this mutant because the generator deliberately creates node_modules containing excluded technology evidence. | **Killed by R2 invariant.** Removing `node_modules` from `EXCLUDED` caused the overview to include both root and nested dependency directories as folders or workspaces. The generated secret `PRIVATE_SENTINEL_aaaaaaaa` appeared in workspace names, and the excluded Vue metadata contaminated framework detection. R2 failed at its `after.output` secret-exclusion assertion (line 211), while R1, R4, and R5 passed. Fast-check seed: `-178665292`; 3 tests passed and 1 failed. |
+| H3 | R4 | Restrict README recognition to the exact name README, excluding README-*.md. | R4 round-trip should kill this mutant because its intermediate assertion expects a newly added README file to change the overview. | **Killed by R4 round-trip.** Restricting README recognition to the exact filename `README` caused the tool to ignore generated files named `README-${token}.md`. Consequently, adding a temporary README did not change the overview, violating R4's intermediate-state assertion at line 226. R4 failed, while R1, R2, and R5 passed. Test results: 3 passed, 1 failed, 1,160 assertions. |
+| H4 | R5 | Report only workspace directories instead of all top-level repository directories. | R5 metamorphic should kill this mutant because renaming user/ to client/ leaves a stale workspace declaration, but the actual client/ directory must still appear. | **Killed by R5 metamorphic.** Replacing actual directory enumeration with workspace-derived folder reporting caused the overview to lose directory information after `user/` was renamed to `client/`. Because the unchanged workspace declaration `["user"]` no longer resolved, the mutant returned `folders: []` instead of the required `["client", "unrelated"]`. R5 failed at its post-rename assertion (line 145). The full suite reported 1 passed and 3 failed, with 537 assertions. Fast-check seed: `-2067914523`. The other two failing properties require individual failure-output confirmation. |
+| H5 | R1 | Stop recursively traversing nested directories for language detection. | R1 model/oracle should kill this mutant because TypeScript and Python evidence is deliberately placed in nested frontend/ and backend/ directories. | **Killed.** Disabling independent nested-directory traversal caused the overview to lose technology evidence from ordinary source directories. R5 failed at its post-rename assertion (line 145): after renaming `user/` to `client/`, the mutant preserved the folder paths but lost React, Python, and TypeScript, retaining only Vue and JavaScript. The unchanged workspace declaration no longer matched the renamed directory, and the disabled traversal could not recover its technology evidence. Fast-check seed: `877758806`. The suite reported 2 passed and 2 failed (960 assertions). R5 is confirmed as a killer; the second failing property requires confirmation from the complete output. |
+
+## Project 5: Stryker survivor strengthening
+
+### README recognition — R4
+
+The initial Stryker run reported a surviving Regex mutant in
+`src/tool/repository-overview.ts` near line 272. The mutant removed the
+start-of-string anchor from `/^README/i`, changing it to `/README/i`.
+
+The original R4 round-trip property generated only filenames beginning
+with `README`, so both the correct implementation and the mutant
+recognized those files. Consequently, the original property could not
+distinguish their behavior.
+
+I strengthened R4 to generate `NOTREADME-${token}.md` files and assert
+that adding them does not change the repository overview. The property
+continues to check that adding a valid README changes the overview and
+deleting it restores the original output.
+
+Verification: the strengthened R4 property killed the mutant at line 232.
+Fast-check seed: `20261111`; shrunk counterexample:
+`[["a"], [{"ext":"tsx","name":"TypeScript"}], false, "AAaA0A0a"]`.
+The mutant run produced 3 passing tests and 1 failing test.
+
+
+## Project 5: Stryker comparison
+
+### Configuration and results
+
+Stryker 10.1.1 was run using `packages/opencode/stryker.xiaomol.config.json`. The command runner executed only `test/tool/repository-overview.property.test.ts`, with mutation scoped to `src/tool/repository-overview.ts`. Coverage analysis was disabled, and fast-check used the fixed seed `20261111`.
+
+The initial run generated 560 mutants: 234 killed, 325 survived, and 1 timed out, for a raw mutation score of 41.96%.
+
+After strengthening R4, the second run generated 560 mutants: 237 killed, 322 survived, and 1 timed out, for a raw mutation score of 42.50%.
+
+The initial HTML report is preserved in `mutants/xiaomol/mutation-baseline.html`. The updated report is saved as `mutants/xiaomol/mutation.html`.
+
+### Hand-written mutants versus Stryker
+
+The five hand-written mutants targeted specific interview-derived requirements. H1 modified TypeScript classification (R1), H2 removed dependency-directory exclusion (R2), H3 restricted README recognition (R4), H4 replaced filesystem-based folder reporting with workspace-derived reporting (R5), and H5 disabled independent nested technology discovery (R1).
+
+Stryker generated many smaller mutations to operators, predicates, regular expressions, array operations, and control-flow conditions. For example, it removed the beginning-of-string anchor from the README recognition regex, a defect that the original R4 property did not detect.
+
+The hand-written approach was useful for constructing meaningful, multi-statement behavioral defects, particularly the workspace-only folder reporting defect in H4. Stryker systematically explored smaller code changes that were less obvious to anticipate, including README regex boundaries, package-manager parsing, workspace validation, and truncation behavior.
+
+The two approaches therefore complement one another: hand-written mutants test deliberately chosen requirement violations, while automated mutation testing reveals additional weaknesses and untested implementation branches.
+
+### Strengthening R4
+
+One surviving Stryker mutant changed `/^README/i` to `/README/i`, causing filenames such as `NOTREADME-abc.md` to be classified as README files.
+
+The original R4 property only generated filenames beginning with README, so the incorrect regex still passed.
+
+I strengthened R4 to generate `NOTREADME-${token}.md` filenames and assert that they do not change the overview. The property also retains the positive README recognition check and the final restoration check.
+
+With the mutant applied, R4 failed at its new assertion (line 232), using fast-check seed `20261111`. The shrunk counterexample included filename `NOTREADME-AAaA0A0a.md`. R1, R2, and R5 passed.
+
+The subsequent full Stryker run killed three additional mutants, increasing the raw mutation score from 41.96% to 42.50%.
+
+### Remaining survivors and limitations
+
+The second run left 322 surviving mutants. These include mutations affecting package-manager parsing, workspace resolution, traversal boundaries, and output truncation.
+
+Not all survivors are equivalent mutants. Some modify observable behavior that the current four properties do not exercise, while others may affect behavior outside the specific acceptance criteria being tested.
+
+The current properties provide strong evidence for their generated scenarios, but do not demonstrate complete correctness across all implementation branches.
+
+
+### Equivalent-adjusted score
+
+The final Stryker run generated 560 mutants: 237 killed, 1 timed out, and 322 survived.
+
+The raw mutation score is (237 + 1) / 560 = **42.50%**.
+
+I identified two equivalent surviving mutants in the `importantFiles` sorting comparator at `src/tool/repository-overview.ts:275`:
+
+- **E1 — EqualityOperator:** Changes `a.path < b.path` to `a.path <= b.path`.
+- **E2 — EqualityOperator:** Changes `a.path > b.path` to `a.path >= b.path`.
+
+The comparator sorts recognized root-level filenames. Each directory entry has a unique name, and each recognized file contributes at most one result, so distinct entries cannot have equal `path` values.
+
+Both mutations change comparison behavior only for equal paths. Since duplicate paths cannot occur in this array, the mutations do not change the observable sorted result for valid repository inputs.
+
+I therefore exclude these two mutants as equivalent.
+
+**Equivalent-adjusted mutation score:**
+
+(237 killed + 1 timeout) / (560 total - 2 equivalent)
+= 238 / 558
+= **42.65%**
+
+The remaining 320 survivors are not classified as equivalent. Their survival may reflect incomplete property coverage, unexercised branches, or additional equivalent mutations that have not been established.
+
+
+
+
+### Hand-written mutations versus Stryker-generated mutations
+
+I inspected Stryker's HTML report at the source locations corresponding to H1–H5 and compared the reported mutations with the five handwritten patches.
+
+| Mutant | Exact mutation generated? | Evidence |
+|---|---|---|
+| H1 | Not observed | Stryker generated nearby language-mapping mutations, but the exact change from `"TypeScript"` to `"JavaScript"` for `typescriptreact` was not observed. |
+| H2 | No match shown | The `EXCLUDED` set entries, including `"node_modules"`, have no mutation markers in the report. |
+| H3 | Not confirmed | Stryker generated README-regex mutations, including changes to the regex and its surrounding expression. The exact change from `/^README/i` to `/^README$/i` was not identified. |
+| H4 | No match shown | Stryker did not show mutations replacing filesystem-derived folder reporting with workspace-derived paths. |
+| H5 | No match shown | Stryker did not show a mutation replacing `const directories = [instance.directory]` with an empty array. |
+
+The handwritten mutants deliberately introduce specific behavioral defects connected to R1, R2, R4, and R5. Stryker instead systematically transforms eligible operators, literals, conditions, and expressions.
+
+The handwritten mutants therefore complement the automated analysis, particularly for semantic substitutions such as H4 and H5. Related Stryker mutants are not treated as exact matches to handwritten patches.
+
+## Project 5: Agent Failure Case
+
+### Agent and prompt
+
+I used opencode (Build mode, GPT-5.6 Luna Fast) to generate a property-based test for requirement R1, which requires the repository overview to report main directories, important files, and programming languages.
+
+The initial prompt asked opencode to propose a fast-check property for important-file recognition, including a generator, assertions, and an independent oracle.
+
+The original proposal required corrections to its README classification and temporary-instance setup. After these corrections, opencode implemented the property in `packages/opencode/test/tool/repository-overview.agent.test.ts`.
+
+The property generated subsets of recognized and irrelevant filenames, then compared the expected `importantFiles` entries against both the metadata and serialized output. It executed 50 generated cases using seed `20261111`.
+
+### Original agent property: mutant survived
+
+The original agent property passed against the normal implementation:
+
+- 1 passed, 0 failed
+- 100 assertions
+- 50 generated cases
+
+I then applied handwritten mutant H5, which changed:
+
+`const directories = [instance.directory]`
+
+to:
+
+`const directories: string[] = []`
+
+This disables independent directory traversal for technology detection.
+
+The original agent property still passed:
+
+- 1 passed, 0 failed
+- 100 assertions
+
+H5 therefore survived the agent-generated property, despite violating the language-detection part of R1.
+
+### Why the agent property missed H5
+
+The agent focused on the requested important-file recognition subproblem and asserted only the `importantFiles` field. It generated no nested source directories and made no assertions about detected programming languages.
+
+Therefore, the property could not distinguish an implementation that correctly traversed nested directories from one that skipped nested technology detection.
+
+The test was meaningful for important-file recognition, but its success did not establish satisfaction of R1 as a whole.
+
+### Strengthening the property
+
+I asked opencode to strengthen its original test while preserving the important-file generator and assertions.
+
+The strengthened property creates `frontend/src/app.tsx` and `backend/src/app.py` inside every generated repository. It then requires Python and TypeScript to appear in both the metadata and serialized output.
+
+Containment assertions were used rather than exact equality because generated recognized files can legitimately provide additional language evidence.
+
+The strengthened property passed on the normal implementation:
+
+- 1 passed, 0 failed
+- 300 assertions
+- 50 generated cases
+
+### Mutant killed after strengthening
+
+I reapplied H5 and ran only the strengthened agent property.
+
+The test failed immediately:
+
+- 0 passed, 1 failed
+- Fast-check seed: `20261111`
+- Shrink path: `0:0:0`
+- Counterexample: `{"recognized":[{"path":"pnpm-lock.yaml","kind":"lockfile"}],"irrelevant":[]}`
+
+The failing assertion expected `result.metadata.overview.languages` to contain `"Python"`, but received `[]`.
+
+The test failed at line 86 of `repository-overview.agent.test.ts`, demonstrating that disabling nested traversal now violates an observable assertion.
+
+The same H5 mutant that survived the original agent property was therefore killed by the strengthened property.
+
+### Reflection
+
+The agent produced a useful property for one part of R1, but it did not independently cover the other required output fields. Mutation testing exposed this gap by showing that a significant defect could survive while all of the original assertions passed.
+
+The improvement came from mapping the full requirement to independent, observable assertions and ensuring each generated case contained meaningful nested language evidence.
+
+This case illustrates that an AI-generated test can pass consistently while still providing incomplete coverage of its stated requirement.
+
+### Evidence
+
+- Agent-generated test: `packages/opencode/test/tool/repository-overview.agent.test.ts`
+- Handwritten mutant: `mutants/xiaomol/H5.patch`
+- Original opencode conversation: "Property-Based Test for Important-File Recognition"
+- Strengthening conversation: "Strengthening Nested Language Detection Property"
+- Original-property survivor and strengthened-property failure: local Bun test logs
+- Original opencode transcript: `mutants/xiaomol/agent-original-transcript.json`
+- Strengthening transcript: `mutants/xiaomol/agent-strengthening-transcript.json`
