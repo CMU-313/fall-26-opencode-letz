@@ -45,7 +45,7 @@ const recognizedFiles = [
 const irrelevantFiles = ["notes.txt", "NOTREADME.md", "source.ts", ".env", "Dockerfile"]
 
 const importantFilesProperty = fc.record({
-  recognized: fc.subarray(recognizedFiles, { minLength: 1 }),
+  recognized: fc.subarray([...recognizedFiles], { minLength: 1 }),
   irrelevant: fc.uniqueArray(fc.constantFrom(...irrelevantFiles), {
     maxLength: irrelevantFiles.length,
   }),
