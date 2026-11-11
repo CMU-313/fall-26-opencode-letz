@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import fs from "fs/promises"
+import { once } from "node:events"
 import path from "path"
 import { Process } from "@/util/process"
 import { tmpdir } from "../fixture/fixture"
@@ -31,33 +32,52 @@ describe("util.process", () => {
 
   test("aborts a running process", async () => {
     const abort = new AbortController()
-    const started = Date.now()
-    setTimeout(() => abort.abort(), 25)
-
-    const out = await Process.run(node("setInterval(() => {}, 1000)"), {
+    const proc = Process.spawn(node('setInterval(() => {}, 1000); process.stdout.write("ready")'), {
       abort: abort.signal,
-      nothrow: true,
+      stdout: "pipe",
     })
-
-    expect(out.code).not.toBe(0)
-    expect(Date.now() - started).toBeLessThan(1000)
+    // Bound readiness and exit without treating OS scheduling latency as a benchmark.
+    const signal = AbortSignal.timeout(2500)
+    try {
+      if (!proc.stdout) throw new Error("Process stdout not available")
+      expect((await once(proc.stdout, "data", { signal }))[0].toString()).toBe("ready")
+      const exited = once(proc, "exit", { signal })
+      abort.abort()
+      await exited
+      expect(await proc.exited).not.toBe(0)
+      if (process.platform !== "win32") expect(proc.signalCode).toBe("SIGTERM")
+    } finally {
+      if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL")
+      await proc.exited
+    }
   }, 3000)
 
   test("kills after timeout when process ignores terminate signal", async () => {
     if (process.platform === "win32") return
 
     const abort = new AbortController()
-    const started = Date.now()
-    setTimeout(() => abort.abort(), 25)
-
-    const out = await Process.run(node('process.on("SIGTERM", () => {}); setInterval(() => {}, 1000)'), {
-      abort: abort.signal,
-      nothrow: true,
-      timeout: 25,
-    })
-
-    expect(out.code).not.toBe(0)
-    expect(Date.now() - started).toBeLessThan(1000)
+    const proc = Process.spawn(
+      node('process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); process.stdout.write("ready")'),
+      {
+        abort: abort.signal,
+        stdout: "pipe",
+        timeout: 25,
+      },
+    )
+    const signal = AbortSignal.timeout(2500)
+    try {
+      if (!proc.stdout) throw new Error("Process stdout not available")
+      // The handler must exist before aborting; a startup sleep cannot guarantee that.
+      expect((await once(proc.stdout, "data", { signal }))[0].toString()).toBe("ready")
+      const exited = once(proc, "exit", { signal })
+      abort.abort()
+      await exited
+      expect(await proc.exited).not.toBe(0)
+      expect(proc.signalCode).toBe("SIGKILL")
+    } finally {
+      if (proc.exitCode === null && proc.signalCode === null) proc.kill("SIGKILL")
+      await proc.exited
+    }
   }, 3000)
 
   test("uses cwd when spawning commands", async () => {
