@@ -627,10 +627,17 @@ test("R1: a command with a redirection is never dropped from the asked patterns"
 
 // A leading "-" makes a PowerShell parameter, and "-/" is not valid syntax.
 const psWord = fc.stringMatching(/^[a-z0-9.\/][a-z0-9.\/-]{0,5}$/)
+// A named parameter with its value after a colon ("-Name:v", "-Path:C:\x"),
+// kept as one exact part. Gaps go around it, never next to the colon. Names
+// are letters only: a digit in the name ("-A0a:0") splits the command today.
+const colonParameter = fc
+  .tuple(fc.stringMatching(/^[A-Za-z]{1,6}$/), fc.oneof(psWord, fc.constant("C:\\x")))
+  .map(([name, value]) => `-${name}:${value}`)
 
 test("powershell: spacing inside quotes is kept, gaps between words shrink", async () => {
   const part = fc.oneof(
     psWord,
+    colonParameter,
     inner.map((x) => `"${x}"`),
     inner.map((x) => `'${x}'`),
     fc.constant('"C:\\"'),
@@ -732,7 +739,8 @@ test("R1: a bash line continuation inside a word joins it, so deny rules still a
 test("R1: a PowerShell backtick line continuation between words is a gap", async () => {
   const gap = fc.constantFrom(" ", "  ", " `\n", " `\n  ", "  `\n ", " `\r\n", " `\r\n  ")
   await fc.assert(
-    fc.asyncProperty(fc.array(psWord, { minLength: 1, maxLength: 3 }), fc.array(gap, { minLength: 1 }), async (parts, gaps) => {
+    // No $(...) or @(...) here: a continuation right after them is a documented gap.
+    fc.asyncProperty(fc.array(fc.oneof(psWord, colonParameter), { minLength: 1, maxLength: 3 }), fc.array(gap, { minLength: 1 }), async (parts, gaps) => {
       const command = ["Write-Output", ...parts]
       expect(await permissionPatterns(join(command, gaps), true)).toEqual([command.join(" ")])
     }),
