@@ -42,6 +42,7 @@ R2 and R3 are kept as written: both are checkable on `evaluate` as stated. R2's 
 | R1 join (P5, found by the implementer) | `r\` + newline + `m -rf /` | Code bug: bash deletes backslash-newline, so this is `rm -rf /`, but the pattern kept `r\`+newline+`m` and bypassed the deny rule | Fixed: a bare continuation joins the word |
 | R1 redirections (P5, test writer) | `. > /etc/- \| / > /etc/0` | Code bug: a redirection after `\|`, `&&` or `\|\|` was dropped from its command's pattern | Fixed: the trailing redirection stays on the last command |
 | R1 vanishing command (P5, test writer) | `- 2>out.txt` | Code bug: the parser skips a bare `-` before `2>`, so no pattern was asked | Fixed: the skipped name is recovered from the input |
+| Independent review (P5) | any call to `permissionPatterns` | Code bug: the parse tree was never freed (WebAssembly memory leak) | Fixed with `try`/`finally` `tree.delete()`; no regression test, since the output is the same either way |
 | Bash backslash-CRLF (P5) | `ec\` + CRLF + `ho` | Spec error: real bash 3.2.57 runs `ec\r` then `ho`, so it is not a continuation | Only backslash + LF counts in bash; PowerShell backtick + CRLF does |
 
 Found, not fixed (out of scope): the PowerShell grammar returns a parse error for `Write-Host<tab>foo` (and for `Write-Output  -/`), so ShellTool finds no command and asks no bash permission at all. This exists on `main` too and only affects PowerShell; a fix needs a fail-closed rule for parse errors.
@@ -70,7 +71,7 @@ Patches are in `mutants/etao/` (apply from the repo root with `git apply`). Pred
 | [H4](../mutants/etao/H4.patch) | R3 | `core/util/wildcard.ts`: `match` drops the regex `s` flag (`"win32" ? "i" : undefined`), so `.*` no longer matches a newline. With only `{"*": "allow"}`, a multi-line command such as `rm a\nb` no longer matches `*` and falls back to ask. | Probably none. R3's commands never contain a newline: the arg generators strip whitespace, and `fc.string()` in fast-check 4.10.2 produces printable ASCII only, which also covers the random permission names. I expect it to survive. | Survived, as predicted: all 11 tests passed. No generated command contains a newline. After strengthening: killed by R3, which now generates newlines and `\r`; counterexample `rm -rf /` with a `\r` gap. |
 | [H5](../mutants/etao/H5.patch) | R5 | `permission/index.ts`: `explain` filters matching rules by pattern only and forgets the permission check, so a rule for another tool (for example `edit` with pattern `*`) is reported as overridden for a bash command. | Probably none. R5's rule generator only uses permissions `bash` and `*`, and it always asks about `bash`, so every generated rule passes the permission check anyway. I expect it to survive. | Survived, as predicted: all 11 tests passed. No generated rule has a permission other than `bash` or `*`. After strengthening: killed by R5, which now generates rules for other tools; counterexample: two bash rules queried as `webfetch`. |
 
-How each was run: `git apply mutants/etao/H<n>.patch`, then `bun test test/permission/permission.property.test.ts` from `packages/opencode`, then `git apply -R` the same patch. All 5 predictions held: 2 killed, 3 survived. The 3 survivors are handled under Strengthening. Rerun on the final properties (commit `eff99f2`): all 5 are killed; H2 by R2, H3 by R4 (model, fromConfig, example) and R5.
+How each was run: `git apply mutants/etao/H<n>.patch`, then `bun test test/permission/permission.property.test.ts` from `packages/opencode`, then `git apply -R` the same patch. All 5 predictions held: 2 killed, 3 survived. The 3 survivors are handled under Strengthening. Rerun on the final code (commit `ec48cf4`): all 5 are killed; H2 by R2, H3 by R4 (model, fromConfig, example) and R5.
 
 ## Stryker comparison
 
@@ -149,17 +150,18 @@ Four real bugs came out of this (see Triage): line continuations between words a
 | `shell.ts:190` `else if (gap)` to `true` | This only changes the empty-gap case to reset the flag, which matters only for two separators in a row; the PowerShell parser never produces those. |
 | `shell.ts:194` separator condition to `true`, `:195` `if (!afterSpace)` to `true` | Only separator nodes are whitespace-only children, and a separator never follows a whitespace gap or another separator, so both conditions are already true or already false whenever they are reached. |
 | `shell.ts:209` `if (!tree) throw` to `if (false)`, and its message to `""` | The parsers are created with a language set, and tree-sitter then always returns a tree for any string, so this branch cannot run. |
-| `shell.ts:215` drop `.filter(Boolean)` | `descendantsOfType` never returns null entries. |
+| `shell.ts:220` drop `.filter(Boolean)` | `descendantsOfType` never returns null entries. |
 
-### Survivor that is not equivalent (1)
+### Survivors that are not equivalent (3)
 
 - `shell.ts:192` (`afterSpace = false` to `true` after non-gap text): it changes output only on PowerShell input like `Write-Output $(Get-Item x)`+backtick+newline+` b`, where the current code is already wrong (the continuation is kept raw, see Found, not fixed). A property for that input would have to assert the buggy output, so it is left alive and recorded with the bug.
+- `shell.ts:213` (empty `finally` block) and `shell.ts:214` (`tree.delete()` removed): these bring back the memory leak an independent review found in `permissionPatterns` (tree-sitter trees live in WebAssembly memory that garbage collection does not free). The returned patterns are identical either way, so no property can see the difference; I decided not to add an internals-based test for it, and the fix was checked by reading the code. Not equivalent, because memory use does change.
 
 ### Final mutation score
 
 | Run | Mutants | Killed (incl. timeout) | Survived | Raw score (Stryker) |
 |---|---|---|---|---|
 | Initial (`c2c5386`, P4 properties) | 104 | 75 | 29 | 72.12% |
-| Final (`eff99f2`) | 226 | 198 | 28 | **87.61%** |
+| Final (`ec48cf4`) | 229 | 199 | 30 | **86.90%** |
 
-The final run has more mutants because the shell fixes added code inside the mutated range (`shell.ts:119-219`). **With the 27 equivalent mutants excluded: 198 / 199 = 99.50%.** Final report: [`mutants/etao/mutation.html`](../mutants/etao/mutation.html); first report: [`mutants/etao/mutation-initial.html`](../mutants/etao/mutation-initial.html).
+The final run has more mutants because the shell fixes added code inside the mutated range (`shell.ts:119-224`). **With the 27 equivalent mutants excluded: 199 / 202 = 98.51%.** The 3 remaining survivors are the ones listed just above. Final report: [`mutants/etao/mutation.html`](../mutants/etao/mutation.html); first report: [`mutants/etao/mutation-initial.html`](../mutants/etao/mutation-initial.html).
