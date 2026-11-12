@@ -90,7 +90,7 @@ const separator = fc.constantFrom(" ", "  ", "\t")
 // Single-quote anything that is not a plain word, so each arg stays one shell
 // word (metacharacters like | ( $ would otherwise split the command).
 function quote(token: string) {
-  if (/^[A-Za-z0-9_.\/=:,@+%-]+$/.test(token)) return token
+  if (/^[A-Za-z0-9_./=:,@+%-]+$/.test(token)) return token
   return "'" + token.replaceAll("'", "'\\''") + "'"
 }
 
@@ -504,7 +504,7 @@ test('deny rule "rm -rf *" still applies with extra spaces or tabs', async () =>
 const inner = fc
   .array(fc.constantFrom("a", " ", "  ", "\t", "b"), { minLength: 1, maxLength: 5 })
   .map((x) => x.join(""))
-const word = fc.stringMatching(/^[a-z0-9.\/-]{1,6}$/)
+const word = fc.stringMatching(/^[a-z0-9./-]{1,6}$/)
 const bashPart = fc.oneof(
   word,
   inner.map((x) => `"${x}"`),
@@ -595,7 +595,7 @@ test("R1: every simple command in a pipeline or list keeps its redirections", as
 // named "-" with a redirection; a dropped command would run without being asked.
 // Kind: invariant
 test("R1: a command with a redirection is never dropped from the asked patterns", async () => {
-  const dashName = fc.oneof(fc.constant("-"), fc.stringMatching(/^-[a-z0-9.\/-]{0,4}$/))
+  const dashName = fc.oneof(fc.constant("-"), fc.stringMatching(/^-[a-z0-9./-]{0,4}$/))
   // The redirection, if any, comes last ("- 2>e x" is a known, documented gap).
   const command = fc
     .tuple(
@@ -626,7 +626,7 @@ test("R1: a command with a redirection is never dropped from the asked patterns"
 })
 
 // A leading "-" makes a PowerShell parameter, and "-/" is not valid syntax.
-const psWord = fc.stringMatching(/^[a-z0-9.\/][a-z0-9.\/-]{0,5}$/)
+const psWord = fc.stringMatching(/^[a-z0-9./][a-z0-9./-]{0,5}$/)
 // A named parameter with its value after a colon ("-Name:v", "-Path:C:\x"),
 // kept as one exact part. Gaps go around it, never next to the colon. Names
 // are letters only: a digit in the name ("-A0a:0") splits the command today.
@@ -708,7 +708,7 @@ function splitWord(text: string, cuts: [number, number][]) {
 // Kind: invariant
 test("R1: a bash line continuation inside a word joins it, so deny rules still apply", async () => {
   const ruleset = Permission.fromConfig({ bash: { "*": "allow", "rm -rf *": "deny" } })
-  const plainWord = fc.stringMatching(/^[a-z0-9.\/-]{1,6}$/)
+  const plainWord = fc.stringMatching(/^[a-z0-9./-]{1,6}$/)
   const run = fc.integer({ min: 1, max: 3 })
   const cuts = fc.array(fc.tuple(fc.integer({ min: 1, max: 5 }), run), { maxLength: 3 })
   await fc.assert(
