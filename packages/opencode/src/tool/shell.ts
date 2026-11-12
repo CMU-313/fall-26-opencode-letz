@@ -121,7 +121,12 @@ function source(node: Node) {
 }
 
 const NESTED = new Set(["command", "command_elements", "file_redirect"])
-const isGap = (text: string) => /^[ \t]+$/.test(text)
+// A gap is spaces, tabs, and line continuations ("\" or "`" before a newline).
+// A continuation with no whitespace beside it joins words in bash, so it is not a gap.
+function isGap(text: string, afterSpace: boolean) {
+  if (!/^(?:[ \t]|[\\`]\r?\n)+$/.test(text)) return false
+  return afterSpace || /[ \t]/.test(text)
+}
 
 // Rebuild a command's text with each whitespace gap between its parsed parts
 // shrunk to one space, so spacing can't change which permission rule matches.
@@ -130,15 +135,29 @@ function spaced(node: Node): string {
   const text = node.text
   let out = ""
   let cursor = 0
+  // PowerShell can split one gap into a separator node plus a raw "`\n" after it,
+  // so whitespace pieces that touch each other still produce only one space.
+  let afterSpace = false
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i)
     if (!child) continue
     const at = text.indexOf(child.text, cursor)
     if (at < 0) return text
     const gap = text.slice(cursor, at)
-    out += isGap(gap) ? " " : gap
-    if (child.type === "command_argument_sep" && isGap(child.text)) out += " "
-    else out += NESTED.has(child.type) ? spaced(child) : child.text
+    if (isGap(gap, afterSpace)) {
+      if (!afterSpace) out += " "
+      afterSpace = true
+    } else if (gap) {
+      out += gap
+      afterSpace = false
+    }
+    if (child.type === "command_argument_sep" && isGap(child.text, afterSpace)) {
+      if (!afterSpace) out += " "
+      afterSpace = true
+    } else {
+      out += NESTED.has(child.type) ? spaced(child) : child.text
+      afterSpace = false
+    }
     cursor = at + child.text.length
   }
   return out + text.slice(cursor)
