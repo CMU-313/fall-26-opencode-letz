@@ -5,6 +5,9 @@ import { Permission } from "../../src/permission"
 import { BashArity } from "../../src/permission/arity"
 import { permissionPatterns } from "../../src/tool/shell"
 
+// Fixed seed so mutation runs are reproducible (P5).
+fc.configureGlobal({ seed: 42 })
+
 type Rule = PermissionV1.Rule
 type Action = Rule["action"]
 
