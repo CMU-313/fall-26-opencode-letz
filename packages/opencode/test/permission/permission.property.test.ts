@@ -646,10 +646,56 @@ test("R1: a bash line continuation between words is a gap, so deny rules still a
   )
 })
 
+// Inserts a bash line continuation at each given position inside a word.
+function splitWord(text: string, positions: number[], continuation: string) {
+  const cuts = [...new Set(positions)].filter((at) => at > 0 && at < text.length).sort((a, b) => a - b)
+  let result = ""
+  let start = 0
+  for (const at of cuts) {
+    result += text.slice(start, at) + continuation
+    start = at
+  }
+  return result + text.slice(start)
+}
+
+// R1 (line continuation inside a word): bash deletes backslash-newline before
+// splitting words, so "r\<newline>m" is "rm" and the pattern must say so.
+// Kind: invariant
+test("R1: a bash line continuation inside a word joins it, so deny rules still apply", async () => {
+  const ruleset = Permission.fromConfig({ bash: { "*": "allow", "rm -rf *": "deny" } })
+  // Only backslash-LF: in bash, backslash-CRLF is not a continuation.
+  const continuation = fc.constant("\\\n")
+  const plainWord = fc.stringMatching(/^[a-z0-9-]{1,6}$/)
+  const cuts = fc.array(fc.integer({ min: 1, max: 5 }), { maxLength: 3 })
+  const splitArg = fc.tuple(plainWord, cuts, continuation)
+  await fc.assert(
+    fc.asyncProperty(
+      fc.stringMatching(/^[a-z][a-z0-9-]{1,5}$/).filter((name) => !RESERVED.has(name)),
+      cuts,
+      fc.array(splitArg, { maxLength: 3 }),
+      fc.array(separator, { minLength: 1, maxLength: 3 }),
+      fc.boolean(),
+      fc.subarray([1, 2], { minLength: 1 }),
+      continuation,
+      async (cmd, cmdCuts, rest, seps, splitRm, flagCuts, cont) => {
+        const words = [cmd, ...rest.map(([text]) => text)]
+        const typed = [splitWord(cmd, cmdCuts, cont), ...rest.map(([text, at, c]) => splitWord(text, at, c))]
+        expect(await permissionPatterns(join(typed, seps))).toEqual([words.join(" ")])
+
+        // The real command is rm -rf, typed with at least one split.
+        const destructive = [splitRm ? "r" + cont + "m" : "rm", splitWord("-rf", flagCuts, cont), ...typed.slice(1)]
+        const [pattern] = await permissionPatterns(join(destructive, seps))
+        expect(pattern).toBe(["rm", "-rf", ...words.slice(1)].join(" "))
+        expect(Permission.evaluate("bash", pattern, ruleset).action).toBe("deny")
+      },
+    ),
+  )
+})
+
 // Same as above for PowerShell, where a backtick before the newline continues the line.
 // Kind: invariant. Expected to FAIL until the continuation bug is fixed.
 test("R1: a PowerShell backtick line continuation between words is a gap", async () => {
-  const gap = fc.constantFrom(" ", "  ", " `\n", " `\n  ", "  `\n ")
+  const gap = fc.constantFrom(" ", "  ", " `\n", " `\n  ", "  `\n ", " `\r\n", " `\r\n  ")
   await fc.assert(
     fc.asyncProperty(fc.array(psWord, { minLength: 1, maxLength: 3 }), fc.array(gap, { minLength: 1 }), async (parts, gaps) => {
       const command = ["Write-Output", ...parts]
