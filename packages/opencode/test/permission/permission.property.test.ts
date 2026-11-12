@@ -488,7 +488,7 @@ const bashPart = fc.oneof(
 )
 
 // One piece of a simple command: how it is typed, and how the pattern shows it.
-type Piece = { source: string; expected: string; redirect: boolean }
+type Piece = { source: string; expected: string }
 
 // A redirection keeps its place on its command; a gap after the operator
 // shrinks to one space, and no gap stays no gap (">out.txt").
@@ -497,15 +497,13 @@ const redirection = fc
   .map(([operator, gap, target]): Piece => ({
     source: operator + gap + target,
     expected: operator + (gap === "" ? "" : " ") + target,
-    redirect: true,
   }))
 const bashPiece = fc.oneof(
-  { weight: 3, arbitrary: bashPart.map((text): Piece => ({ source: text, expected: text, redirect: false })) },
+  { weight: 3, arbitrary: bashPart.map((text): Piece => ({ source: text, expected: text })) },
   { weight: 1, arbitrary: redirection },
 )
-// Names starting with "-" are left out: "- 2>e" yields no pattern at all today.
 const bashCommand = fc.tuple(
-  word.filter((name) => !RESERVED.has(name) && !name.startsWith("-")),
+  word.filter((name) => !RESERVED.has(name)),
   fc.array(bashPiece, { maxLength: 4 }),
   fc.array(separator, { minLength: 1 }),
 )
@@ -519,22 +517,74 @@ test("bash: spacing inside quotes and escapes is kept, gaps between words shrink
       fc.array(connector, { minLength: 2, maxLength: 2 }),
       optionalGap,
       optionalGap,
-      async (generated, connectors, leading, trailing) => {
-        // Known gap: a redirection on a command after "|", "&&" or "||" is dropped
-        // today ("a | b > x" gives ["a", "b"]), so those commands carry none here.
-        const commands = generated.map(([cmd, pieces, seps], i) => {
-          const afterSemicolon = i === 0 || connectors[(i - 1) % connectors.length][1] === ";"
-          const kept = afterSemicolon ? pieces : pieces.filter((piece) => !piece.redirect)
-          return [cmd, kept, seps] as const
-        })
+      async (commands, connectors, leading, trailing) => {
         const typed = commands.map(([cmd, pieces, seps]) => join([cmd, ...pieces.map((p) => p.source)], seps))
         const expected = commands.map(([cmd, pieces]) => [cmd, ...pieces.map((p) => p.expected)].join(" "))
-        let text = typed[0]
-        for (let i = 1; i < typed.length; i++) {
-          const [before, operator, after] = connectors[(i - 1) % connectors.length]
-          text += before + operator + after + typed[i]
+        expect(await permissionPatterns(leading + chain(typed, connectors) + trailing)).toEqual(expected)
+      },
+    ),
+  )
+})
+
+// Joins typed commands with "before operator after" connectors, in order.
+function chain(typed: string[], connectors: [string, string, string][]) {
+  let text = typed[0]
+  for (let i = 1; i < typed.length; i++) {
+    const [before, operator, after] = connectors[(i - 1) % connectors.length]
+    text += before + operator + after + typed[i]
+  }
+  return text
+}
+
+// R1 (redirections): each simple command keeps its own redirection, wherever
+// it sits in a pipeline or list, so a rule about "> /etc/" applies to every one.
+// Kind: invariant
+test("R1: every simple command in a pipeline or list keeps its redirections", async () => {
+  const ruleset = Permission.fromConfig({ bash: { "*": "allow", "* > /etc/*": "deny" } })
+  const writer = fc.tuple(
+    word.filter((name) => !RESERVED.has(name)),
+    fc.array(word, { maxLength: 2 }),
+    fc.constantFrom(" ", "  ", "\t"),
+    word,
+  )
+  const connector = fc.tuple(optionalGap, fc.constantFrom("|", ";", "&&", "||"), optionalGap)
+  await fc.assert(
+    fc.asyncProperty(
+      fc.array(writer, { minLength: 2, maxLength: 3 }),
+      fc.array(connector, { minLength: 2, maxLength: 2 }),
+      async (commands, connectors) => {
+        const typed = commands.map(([cmd, rest, gap, file]) => [cmd, ...rest].join(" ") + " >" + gap + "/etc/" + file)
+        const expected = commands.map(([cmd, rest, , file]) => [cmd, ...rest, ">", "/etc/" + file].join(" "))
+        const patterns = await permissionPatterns(chain(typed, connectors))
+        expect(patterns).toEqual(expected)
+        for (const pattern of patterns) {
+          expect(Permission.evaluate("bash", pattern, ruleset).action).toBe("deny")
         }
-        expect(await permissionPatterns(leading + text + trailing)).toEqual(expected)
+      },
+    ),
+  )
+})
+
+// R1 (no silent commands): every simple command yields a pattern, even one
+// named "-" with a redirection; a dropped command would run without being asked.
+// Kind: invariant
+test("R1: a command with a redirection is never dropped from the asked patterns", async () => {
+  const dashName = fc.oneof(fc.constant("-"), fc.stringMatching(/^-[a-z0-9.\/-]{0,4}$/))
+  const command = fc.tuple(
+    fc.oneof(dashName, word.filter((name) => !RESERVED.has(name))),
+    fc.array(word, { maxLength: 2 }),
+    redirection,
+  )
+  // Only ";" here, so this property is not about pipelines (covered above).
+  const connector = fc.tuple(optionalGap, fc.constant(";"), optionalGap)
+  await fc.assert(
+    fc.asyncProperty(
+      fc.array(command, { minLength: 1, maxLength: 3 }),
+      fc.array(connector, { minLength: 2, maxLength: 2 }),
+      async (commands, connectors) => {
+        const typed = commands.map(([cmd, rest, redirect]) => [cmd, ...rest, redirect.source].join(" "))
+        const expected = commands.map(([cmd, rest, redirect]) => [cmd, ...rest, redirect.expected].join(" "))
+        expect(await permissionPatterns(chain(typed, connectors))).toEqual(expected)
       },
     ),
   )
