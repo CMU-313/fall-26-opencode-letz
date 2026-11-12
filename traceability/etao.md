@@ -54,3 +54,43 @@ Patches are in `mutants/etao/` (apply from the repo root with `git apply`). Pred
 | [H5](../mutants/etao/H5.patch) | R5 | `permission/index.ts`: `explain` filters matching rules by pattern only and forgets the permission check, so a rule for another tool (for example `edit` with pattern `*`) is reported as overridden for a bash command. | Probably none. R5's rule generator only uses permissions `bash` and `*`, and it always asks about `bash`, so every generated rule passes the permission check anyway. I expect it to survive. | Survived, as predicted: all 11 tests passed. No generated rule has a permission other than `bash` or `*`. |
 
 How each was run: `git apply mutants/etao/H<n>.patch`, then `bun test test/permission/permission.property.test.ts` from `packages/opencode`, then `git apply -R` the same patch. All 5 predictions held: 2 killed, 3 survived. The 3 survivors are handled under Strengthening.
+
+## Stryker comparison
+
+**Setup.** Config: `packages/opencode/stryker.etao.config.json` (command runner, runs only `bun test test/permission/permission.property.test.ts`, coverage analysis off). fast-check seed: **42** (`fc.configureGlobal({ seed: 42 })` at the top of the property file). Run with `bunx stryker run stryker.etao.config.json` from `packages/opencode` (Stryker 10.1.1, about 38 s). Report: [`mutants/etao/mutation.html`](../mutants/etao/mutation.html).
+
+Mutated ranges, chosen as the functions my properties actually call:
+
+- `src/permission/index.ts:28-48` (`evaluate`, `explain`)
+- `src/permission/index.ts:196-208` (`fromConfig`)
+- `src/permission/arity.ts:1-9` (`BashArity.prefix`)
+- `src/tool/shell.ts:119-152` (`source`, `spaced`, `permissionPatterns`)
+
+Left out on purpose: `ask` / `reply` (`index.ts:77-177`), because no property calls them (R1 and R2 build the "always" rule the same way `reply` does, then call `evaluate`), so every mutant there would survive without saying anything about the properties. `packages/core/src/util/wildcard.ts` is in another package, outside the folder Stryker runs from; H4 covers it by hand instead.
+
+**Initial mutation score (raw, as Stryker reports it): 72.12%.** 104 mutants: 73 killed, 2 timed out (counted as killed), 29 survived, 0 without coverage, 0 errors. Rerunning with the same seed gave the same numbers.
+
+| File | Score | Killed | Timeout | Survived |
+|---|---|---|---|---|
+| `permission/index.ts` | 91.43% | 32 | 0 | 3 |
+| `permission/arity.ts` | 47.06% | 7 | 1 | 9 |
+| `tool/shell.ts` | 67.31% | 34 | 1 | 17 |
+
+**(a) Which hand-written mutants did Stryker never generate, and why not?**
+
+- H1 (`len > 0` to `len > 1`): Stryker's equality mutator only swaps the operator (`>=`, `<=`) and never changes the constant, so it made `len >= 0` and `len <= 0` but not `len > 1`. Its `len <= 0` and `false` mutants (lookup skipped entirely) do survive for the same reason H1 does.
+- H2 (`rulesets.toReversed()`): Stryker removes or swaps method calls but never inserts a new one.
+- H3 (deny-first early return): this adds a new branch and a new idea ("deny always wins"). Stryker only makes small edits to existing code.
+- H4 (drop the regex `s` flag): `wildcard.ts` is outside my Stryker scope. If it were in scope, a string mutation of `"s"` to `""` would come close.
+- H5 (drop one operand of `&&` in `explain`): Stryker swapped `&&` for `||` and replaced the whole condition with `true` or `false` (all killed), but it did not replace just one operand inside this arrow function, so the exact H5 change was never made.
+
+**(b) Which Stryker survivors would I never have thought of? Would a real developer plausibly write them?**
+
+- `BashArity.prefix` with the lookup loop removed or disabled (`for (...) {}`, `false`, `if (false) return ...`, `tokens.join(" ")` instead of `tokens.slice(0, len)`): I would not have guessed that removing the whole arity lookup survives. A developer is unlikely to delete the loop, but `tokens.join(" ")` (forgetting the slice) is a plausible slip. It shows the R1 properties never check the arity result against anything independent.
+- The default rule's `pattern: "*"` changed to `""` in `evaluate`: plausible as a careless edit, and visible to anyone who reads the returned rule (for example through `explain`).
+- `shell.ts` redirect handling (`node.parent?.type === "redirected_statement"` flipped or forced): I did not think about redirections (`ls > out.txt`) at all. A developer could easily get this condition backwards.
+- `shell.ts` details such as the `isGap` regex anchors, `NESTED` set entries, and the PowerShell `command_argument_sep` check: I would not have written these; some may be equivalent (decided under Strengthening).
+
+**(c) What does each approach find that the other doesn't?**
+
+Hand-written mutants test the ideas behind a requirement: wrong ruleset order (H2), a "safer" precedence rule (H3), and input classes the generators never reach (H4 newlines, H5 other tools). Stryker cannot invent these, because each needs a new expression rather than a small edit. Stryker is exhaustive over small edits in the code I scoped, and found whole areas no property checks: the arity lookup, the default rule's shape, and redirections in the shell parser. It also produces mutants that change nothing observable, which hand-written mutants avoid by design.
