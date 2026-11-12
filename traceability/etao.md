@@ -8,7 +8,7 @@ All tests are in `packages/opencode/test/permission/permission.property.test.ts`
 
 | ID | Interview evidence | Requirement | Acceptance Criteria | Changed in P4? | Property (kind) | Test | Mutants it kills |
 |---|---|---|---|---|---|---|---|
-| R1 | S-3, O-2 | When the user picks "always allow" for a shell command, later commands that run the same command (same `BashArity` prefix, e.g. `git commit`) and differ only in the arguments after it are also allowed without asking again, however many spaces, tabs, or line continuations (bash `\` + newline, PowerShell backtick + newline) separate the words. Every simple command in a pipeline or list is asked about with its own redirections. Commands that put flags before the subcommand (`git -C dir commit`) are out of scope. | User picks "always allow" for `git commit -m "first"`. The agent then runs `git commit -m "second"` (or `git commit\t-m "second"`) with no prompt. `git commitx` still asks. | Yes | Same command with different args stays allowed (metamorphic); lookalike command is not covered (invariant) | "R1: after always-allow, the same command with different arguments is allowed"; "R1: always-allow does not cover a different command that shares a prefix"; P5 added "R1: BashArity.prefix returns the known human command...", "R1: always-allow for one subcommand still asks for a different subcommand...", "R1: BashArity.prefix is a non-empty leading slice...", "R1: every simple command in a pipeline or list keeps its redirections", "R1: a command with a redirection is never dropped...", and three line-continuation properties | H1; Stryker: `arity.ts` lookup (15 of 17 killed or timed out; the other 2 are equivalent) and `shell.ts` pattern building (149 of 174) |
+| R1 | S-3, O-2 | When the user picks "always allow" for a shell command, later commands that run the same command (same `BashArity` prefix, e.g. `git commit`) and differ only in the arguments after it are also allowed without asking again, however many spaces, tabs, or line continuations (bash `\` + newline, PowerShell backtick + newline) separate the words. Every simple command in a pipeline or list is asked about with its own redirections. Commands that put flags before the subcommand (`git -C dir commit`) are out of scope. | User picks "always allow" for `git commit -m "first"`. The agent then runs `git commit -m "second"` (or `git commit\t-m "second"`) with no prompt. `git commitx` still asks. | Yes | Same command with different args stays allowed (metamorphic); lookalike command is not covered (invariant) | "R1: after always-allow, the same command with different arguments is allowed"; "R1: always-allow does not cover a different command that shares a prefix"; P5 added "R1: BashArity.prefix returns the known human command...", "R1: always-allow for one subcommand still asks for a different subcommand...", "R1: BashArity.prefix is a non-empty leading slice...", "R1: every simple command in a pipeline or list keeps its redirections", "R1: a command with a redirection is never dropped...", and three line-continuation properties | H1, agent-arity (see Agent failure case); Stryker: `arity.ts` lookup (15 of 17 killed or timed out; the other 2 are equivalent) and `shell.ts` pattern building (149 of 174) |
 | R2 | S-12, C-11, O-10 | After the user picks "always allow" for a command, the tool does not ask about that same command again for the rest of the session. | User picks "always allow" for `ls`. The agent then runs `ls` three more times in the same session, and the user sees zero further prompts. | No | Every later evaluation in the session stays allow, whatever the config and later approvals (invariant) | "R2: an always-allowed command stays allowed for the rest of the session" | H2; Stryker: none beyond the `evaluate` mutants R4 also kills |
 | R3 | S-6, C-6, O-4 | If the config has a catch-all `"*": "allow"` and no other rule matches, every command is allowed, including destructive ones. | With only the rule `{"*": "allow"}`, `rm file.txt`, `git push --force`, and `gh pr merge 12` all evaluate to allow and run with no prompt. | No | Any permission and any command evaluates to allow (invariant) | "R3: with only {"*": "allow"}, every command is allowed" | H4 (after P5 strengthening) |
 | R4 | S-9, S-11 | Rules that cannot both match the same command give the same result in any order. Order only matters between rules that overlap, and then the later rule wins (last match wins). | `{"rm *": "deny", "git push *": "ask"}` in either order gives deny for `rm file.txt` and ask for `git push`. `{"*": "ask", "rm *": "deny"}` gives deny for `rm file.txt` and ask for `ls`; in reverse order `rm file.txt` gives ask, because the later `"*"` overlaps and wins. | Yes | `evaluate` agrees with a plain last-match-wins reference (model/oracle); shuffling non-overlapping rules keeps the result (metamorphic) | "R4: evaluate agrees with a last-match-wins reference model"; "R4: reordering rules that cannot both match the command does not change the result"; "R4: {"*": "ask", "rm *": "deny"} denies rm, and reversed order asks" | H3; Stryker: `evaluate` (`index.ts:28-38`) and `fromConfig` (`index.ts:196-208`) mutants |
@@ -165,3 +165,98 @@ Four real bugs came out of this (see Triage): line continuations between words a
 | Final (`ec48cf4`) | 229 | 199 | 30 | **86.90%** |
 
 The final run has more mutants because the shell fixes added code inside the mutated range (`shell.ts:119-224`). **With the 27 equivalent mutants excluded: 199 / 202 = 98.51%.** The 3 remaining survivors are the ones listed just above. Final report: [`mutants/etao/mutation.html`](../mutants/etao/mutation.html); first report: [`mutants/etao/mutation-initial.html`](../mutants/etao/mutation-initial.html).
+
+## Agent failure case
+
+None of my P4 properties came from opencode (they came from a different AI coding assistant), so as the spec allows I asked opencode for a fresh property on 2026-11-12.
+
+**Session:** opencode 1.19.5 (official CLI), model `opencode/big-pickle` (free), Build agent, session `ses_e2e8dd74bffe5OqZn6HkvrP24P`, run from the repo root on `etao/properties`. **Share link:** none. This version has no share command (`/share` gives "No matching items", and the command palette search for "share" gives "No results found"), so the excerpt below is copied verbatim from `opencode export ses_e2e8dd74bffe5OqZn6HkvrP24P`.
+
+### Transcript excerpt
+
+Prompt (verbatim):
+
+````text
+Write one fast-check property test (bun:test, TypeScript) for this requirement of opencode's permission rules:
+
+R1: When the user picks "always allow" for a shell command, later commands that run the same command (same BashArity prefix, e.g. `git commit`) and differ only in the arguments after it are also allowed without asking again.
+Acceptance criteria: User picks "always allow" for `git commit -m "first"`. The agent then runs `git commit -m "second"` with no prompt. `git commitx` still asks.
+
+Relevant code: `BashArity.prefix(tokens: string[]): string[]` in packages/opencode/src/permission/arity.ts, and `Permission.evaluate(permission, pattern, ...rulesets)` in packages/opencode/src/permission/index.ts (import as `import { Permission } from "../../src/permission"`). When the user picks "always", ShellTool stores the rule { permission: "bash", pattern: BashArity.prefix(tokens).join(" ") + " *", action: "allow" }. The test file will live at packages/opencode/test/permission/.
+
+Reply with the complete test file in one code block. Do not create or edit any files.
+````
+
+Before answering, the agent ran these tools: `read: packages/opencode/src/permission/arity.ts`; `read: packages/opencode/src/permission/index.ts`; `bash: ls -la packages/opencode/test/permission/ 2>/dev/null; echo "---"; find packages/opencode/test/permission -type f 2>/dev/null`; `bash: cat packages/core/src/util/wildcard.ts 2>/dev/null || find packages -path '*util/wildcard*' -type f`; `read: packages/opencode/test/permission/arity.test.ts`; `bash: head -80 "packages/opencode/test/permission/permission.property.test.ts"`; `bash: grep -n "always\|evaluate\|prefix\|Ruleset\|property\|test(" "packages/opencode/test/permission/permission.property.test.ts" | head -80`; `read: packages/opencode/test/permission/permission.property.test.ts`. So it read `arity.ts`, `index.ts`, the wildcard code, and my existing property file before writing its own.
+
+Response (verbatim, the whole final message):
+
+```ts
+import { expect, test } from "bun:test"
+import fc from "fast-check"
+import { Permission } from "../../src/permission"
+import { BashArity } from "../../src/permission/arity"
+
+// Arguments are single whitespace-free shell words, so joining with spaces
+// reconstructs the command text the shell tool would ask about.
+const argument = fc.stringMatching(/^[A-Za-z0-9_./:=@%+-]{1,8}$/)
+const trailingArguments = fc.array(argument, { maxLength: 4 })
+
+function alwaysAllow(tokens: string[]) {
+  return {
+    permission: "bash",
+    pattern: BashArity.prefix(tokens).join(" ") + " *",
+    action: "allow" as const,
+  }
+}
+
+function actionFor(tokens: string[], rules: ReturnType<typeof alwaysAllow>[]) {
+  return Permission.evaluate("bash", tokens.join(" "), rules).action
+}
+
+test("R1: always allow covers the same bash command with different trailing arguments", () => {
+  fc.assert(
+    fc.property(trailingArguments, trailingArguments, (first, second) => {
+      const approved = [alwaysAllow(["git", "commit", ...first])]
+
+      // Later commands with the same BashArity prefix are allowed.
+      expect(actionFor(["git", "commit", ...second], approved)).toBe("allow")
+
+      // The acceptance example: approving `git commit -m "first"` covers
+      // `git commit -m "second"`.
+      expect(actionFor(["git", "commit", "-m", '"second"'], approved)).toBe("allow")
+
+      // A lookalike command is a different prefix, so it still asks.
+      expect(actionFor(["git", "commitx"], approved)).toBe("ask")
+    }),
+  )
+})
+```
+
+### The mutant it let survive
+
+[`mutants/etao/agent-arity.patch`](../mutants/etao/agent-arity.patch), the same change as Stryker's `arity.ts:8` MethodExpression mutant: in `BashArity.prefix`, the fallback for a command that is not in the arity table returns `tokens` (the whole command) instead of `tokens.slice(0, 1)` (its first word). A developer could plausibly write this as "if we don't know the command, keep all of it". Effect: approving "always" for `zqa _` stores `zqa _ *`, so a later `zqa` or `zqa other` still asks, which breaks R1 (same command, different arguments).
+
+With the patch applied, the agent's property passes (1 pass, 0 fail), while my main R1 properties fail on it (counterexample `["zqa"]` with arg `\"\"`). Run separately with Stryker on `index.ts:28-38` and `arity.ts:1-9` using only the agent's file, 8 mutants survived (score 69.23%); the one above is the clearest R1 bug among them.
+
+### Why the property was too weak
+
+- **The generator never reaches the bug.** Every case uses `git commit`, which is in the arity table, so the fallback line is never executed. No unknown command, no other table entry, and no sibling subcommand is ever generated.
+- **The oracle reuses the code under test.** `alwaysAllow` builds the expected approval with `BashArity.prefix`, so any arity bug changes the expected value and the actual value together. Its only independent check is the fixed `git commitx` example, which is why it does kill H1 (with H1, `git commitx` matches `git *`).
+
+### Strengthened version and evidence
+
+The agent's test is kept unchanged in `packages/opencode/test/permission/agent-r1.property.test.ts` (with the file-level seed 42 added). Below it, "R1 (strengthened agent property): always allow covers the same command with any arguments, and nothing else" keeps the agent's helpers but draws the command from a hand-written table of human commands plus unknown `zq...` commands, takes the expected human command from that table instead of from `BashArity.prefix`, and also checks that a sibling subcommand (`git push` after `git commit`) and a lookalike still ask.
+
+Command, from `packages/opencode`, with `git apply mutants/etao/agent-arity.patch` applied from the repo root (test timings trimmed):
+
+```text
+$ bun test test/permission/agent-r1.property.test.ts
+(pass) R1: always allow covers the same bash command with different trailing arguments
+Counterexample: [["zqa"],["_"],[],[["git","commit"],["git","push"]],false,"a"]
+(fail) R1 (strengthened agent property): always allow covers the same command with any arguments, and nothing else
+ 1 pass
+ 1 fail
+```
+
+On the unmutated code both tests pass (2 pass, 0 fail). The shrunk counterexample approves `zqa _` and then runs `zqa` with no arguments, which the mutant asks about instead of allowing.
