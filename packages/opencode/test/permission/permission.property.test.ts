@@ -325,14 +325,41 @@ const rule = fc.record({
   action: configAction,
 })
 
+// A query (permission, command) and rules built around it, so that several
+// rules often match it: permission is the queried one, "*" or another tool;
+// pattern is "*", the first word + " *", the exact command, or an unrelated one.
+const overlapCase = fc.tuple(permissionName, commandName, args).chain(([perm, name, rest]) => {
+  const command = [...name, ...rest].join(" ")
+  const otherTool = permissionName.filter((tool) => tool !== perm)
+  const overlappingRule = fc.record({
+    permission: fc.oneof(
+      { weight: 3, arbitrary: fc.constant(perm) },
+      { weight: 2, arbitrary: fc.constant("*") },
+      { weight: 1, arbitrary: otherTool },
+    ),
+    pattern: fc.oneof(
+      { weight: 2, arbitrary: fc.constant("*") },
+      { weight: 3, arbitrary: fc.constant(name[0] + " *") },
+      { weight: 3, arbitrary: fc.constant(command) },
+      { weight: 2, arbitrary: unknownCommand.map((other) => other + " *") },
+    ),
+    action: configAction,
+  })
+  // Mostly overlapping rules; some fully random rule lists keep the no-match cases.
+  const rules = fc.oneof(
+    { weight: 5, arbitrary: fc.array(overlappingRule, { minLength: 2, maxLength: 8 }) },
+    { weight: 1, arbitrary: fc.array(rule, { maxLength: 8 }) },
+  )
+  return rules.map((generated) => ({ perm, command, rules: generated }))
+})
+
 // R4 (revised): Rules that cannot both match the same command can be written
 // in any order without changing the result; order only matters between rules
 // that overlap, where the later one wins.
 // Kind: model/oracle (evaluate agrees with a plain last-match-wins model)
 test("R4: evaluate agrees with a last-match-wins reference model", () => {
   fc.assert(
-    fc.property(fc.array(rule, { maxLength: 8 }), permissionName, commandName, args, (rules, perm, name, rest) => {
-      const command = [...name, ...rest].join(" ")
+    fc.property(overlapCase, ({ perm, command, rules }) => {
       expect(Permission.evaluate(perm, command, rules)).toEqual(expectedRule(perm, command, rules))
     }),
   )
@@ -443,8 +470,7 @@ test("R4: fromConfig yields the config's rules in order, and evaluate over them 
 // earlier matching rule with a different action, in order)
 test("R5: explain names the deciding rule and the rules it overrode", () => {
   fc.assert(
-    fc.property(fc.array(rule, { maxLength: 8 }), permissionName, commandName, args, (rules, perm, name, rest) => {
-      const command = [...name, ...rest].join(" ")
+    fc.property(overlapCase, ({ perm, command, rules }) => {
       const result = Permission.explain(perm, command, rules)
       const decider = expectedRule(perm, command, rules)
       const earlier = rules.filter((r) => ruleMatches(r, perm, command)).slice(0, -1)
@@ -570,20 +596,29 @@ test("R1: every simple command in a pipeline or list keeps its redirections", as
 // Kind: invariant
 test("R1: a command with a redirection is never dropped from the asked patterns", async () => {
   const dashName = fc.oneof(fc.constant("-"), fc.stringMatching(/^-[a-z0-9.\/-]{0,4}$/))
-  const command = fc.tuple(
-    fc.oneof(dashName, word.filter((name) => !RESERVED.has(name))),
-    fc.array(word, { maxLength: 2 }),
-    redirection,
-  )
-  // Only ";" here, so this property is not about pipelines (covered above).
-  const connector = fc.tuple(optionalGap, fc.constant(";"), optionalGap)
+  // The redirection, if any, comes last ("- 2>e x" is a known, documented gap).
+  const command = fc
+    .tuple(
+      fc.oneof(dashName, word.filter((name) => !RESERVED.has(name))),
+      fc.array(word, { maxLength: 2 }),
+      fc.option(redirection, { freq: 2 }),
+    )
+    .map(([cmd, rest, redirect]) => ({
+      typed: [cmd, ...rest, ...(redirect ? [redirect.source] : [])].join(" "),
+      expected: [cmd, ...rest, ...(redirect ? [redirect.expected] : [])].join(" "),
+    }))
+  // A list of pipelines, so a "- 2>e" statement can open a pipeline after ";" or "&&".
+  const pipeline = fc.array(command, { minLength: 1, maxLength: 3 })
+  const pipe = fc.tuple(optionalGap, fc.constant("|"), optionalGap)
+  const listConnector = fc.tuple(optionalGap, fc.constantFrom(";", "&&", "||"), optionalGap)
   await fc.assert(
     fc.asyncProperty(
-      fc.array(command, { minLength: 1, maxLength: 3 }),
-      fc.array(connector, { minLength: 2, maxLength: 2 }),
-      async (commands, connectors) => {
-        const typed = commands.map(([cmd, rest, redirect]) => [cmd, ...rest, redirect.source].join(" "))
-        const expected = commands.map(([cmd, rest, redirect]) => [cmd, ...rest, redirect.expected].join(" "))
+      fc.array(pipeline, { minLength: 1, maxLength: 3 }),
+      fc.array(pipe, { minLength: 2, maxLength: 2 }),
+      fc.array(listConnector, { minLength: 2, maxLength: 2 }),
+      async (pipelines, pipes, connectors) => {
+        const typed = pipelines.map((commands) => chain(commands.map((c) => c.typed), pipes))
+        const expected = pipelines.flatMap((commands) => commands.map((c) => c.expected))
         expect(await permissionPatterns(chain(typed, connectors))).toEqual(expected)
       },
     ),
@@ -627,7 +662,7 @@ test("powershell: spacing inside quotes is kept, gaps between words shrink", asy
 
 // R1 (line continuation): backslash-newline with whitespace beside it is a gap
 // between words, so it must shrink to one space like any other gap.
-// Kind: invariant. Expected to FAIL until the continuation bug is fixed.
+// Kind: invariant
 test("R1: a bash line continuation between words is a gap, so deny rules still apply", async () => {
   const gap = fc.constantFrom(" ", "\t", " \\\n", "\\\n ", " \\\n ", "\t\\\n\t", "  \\\n")
   const ruleset = Permission.fromConfig({ bash: { "*": "allow", "rm -rf *": "deny" } })
@@ -646,44 +681,44 @@ test("R1: a bash line continuation between words is a gap, so deny rules still a
   )
 })
 
-// Inserts a bash line continuation at each given position inside a word.
-function splitWord(text: string, positions: number[], continuation: string) {
-  const cuts = [...new Set(positions)].filter((at) => at > 0 && at < text.length).sort((a, b) => a - b)
+// Inserts a run of bash line continuations at each [position, count] cut
+// inside a word (count backslash-newlines in a row at that position).
+function splitWord(text: string, cuts: [number, number][]) {
+  const byPosition = new Map(cuts.filter(([at]) => at > 0 && at < text.length))
+  const positions = [...byPosition.keys()].sort((a, b) => a - b)
   let result = ""
   let start = 0
-  for (const at of cuts) {
-    result += text.slice(start, at) + continuation
+  for (const at of positions) {
+    result += text.slice(start, at) + "\\\n".repeat(byPosition.get(at)!)
     start = at
   }
   return result + text.slice(start)
 }
 
-// R1 (line continuation inside a word): bash deletes backslash-newline before
-// splitting words, so "r\<newline>m" is "rm" and the pattern must say so.
+// R1 (line continuation inside a word): bash deletes every backslash-newline
+// before splitting words, so "r\<newline>m" is "rm" and the pattern must say so.
+// Only backslash-LF: in bash, backslash-CRLF is not a continuation.
 // Kind: invariant
 test("R1: a bash line continuation inside a word joins it, so deny rules still apply", async () => {
   const ruleset = Permission.fromConfig({ bash: { "*": "allow", "rm -rf *": "deny" } })
-  // Only backslash-LF: in bash, backslash-CRLF is not a continuation.
-  const continuation = fc.constant("\\\n")
-  const plainWord = fc.stringMatching(/^[a-z0-9-]{1,6}$/)
-  const cuts = fc.array(fc.integer({ min: 1, max: 5 }), { maxLength: 3 })
-  const splitArg = fc.tuple(plainWord, cuts, continuation)
+  const plainWord = fc.stringMatching(/^[a-z0-9.\/-]{1,6}$/)
+  const run = fc.integer({ min: 1, max: 3 })
+  const cuts = fc.array(fc.tuple(fc.integer({ min: 1, max: 5 }), run), { maxLength: 3 })
   await fc.assert(
     fc.asyncProperty(
       fc.stringMatching(/^[a-z][a-z0-9-]{1,5}$/).filter((name) => !RESERVED.has(name)),
       cuts,
-      fc.array(splitArg, { maxLength: 3 }),
+      fc.array(fc.tuple(plainWord, cuts), { maxLength: 3 }),
       fc.array(separator, { minLength: 1, maxLength: 3 }),
-      fc.boolean(),
-      fc.subarray([1, 2], { minLength: 1 }),
-      continuation,
-      async (cmd, cmdCuts, rest, seps, splitRm, flagCuts, cont) => {
+      fc.integer({ min: 0, max: 3 }),
+      fc.uniqueArray(fc.tuple(fc.integer({ min: 1, max: 2 }), run), { selector: ([at]) => at, minLength: 1 }),
+      async (cmd, cmdCuts, rest, seps, rmRun, flagCuts) => {
         const words = [cmd, ...rest.map(([text]) => text)]
-        const typed = [splitWord(cmd, cmdCuts, cont), ...rest.map(([text, at, c]) => splitWord(text, at, c))]
+        const typed = [splitWord(cmd, cmdCuts), ...rest.map(([text, at]) => splitWord(text, at))]
         expect(await permissionPatterns(join(typed, seps))).toEqual([words.join(" ")])
 
         // The real command is rm -rf, typed with at least one split.
-        const destructive = [splitRm ? "r" + cont + "m" : "rm", splitWord("-rf", flagCuts, cont), ...typed.slice(1)]
+        const destructive = [splitWord("rm", [[1, rmRun]]), splitWord("-rf", flagCuts), ...typed.slice(1)]
         const [pattern] = await permissionPatterns(join(destructive, seps))
         expect(pattern).toBe(["rm", "-rf", ...words.slice(1)].join(" "))
         expect(Permission.evaluate("bash", pattern, ruleset).action).toBe("deny")
@@ -693,7 +728,7 @@ test("R1: a bash line continuation inside a word joins it, so deny rules still a
 })
 
 // Same as above for PowerShell, where a backtick before the newline continues the line.
-// Kind: invariant. Expected to FAIL until the continuation bug is fixed.
+// Kind: invariant
 test("R1: a PowerShell backtick line continuation between words is a gap", async () => {
   const gap = fc.constantFrom(" ", "  ", " `\n", " `\n  ", "  `\n ", " `\r\n", " `\r\n  ")
   await fc.assert(
