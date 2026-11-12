@@ -116,30 +116,68 @@ function parts(node: Node) {
   return out
 }
 
-function source(node: Node) {
-  return spaced(node.parent?.type === "redirected_statement" ? node.parent : node).trim()
+function source(node: Node, input: string) {
+  const skipped = skippedName(node, input)
+  if (skipped) return skipped + " " + spaced(node).trim()
+  if (node.parent?.type === "redirected_statement") return spaced(node.parent).trim()
+  const statement = trailingRedirect(node)
+  if (!statement) return spaced(node).trim()
+  // Keep only this command and the statement's redirections, not earlier commands.
+  const text = statement.text.slice(node.startIndex - statement.startIndex)
+  const redirects = statement.children.filter((child): child is Node => !!child && REDIRECTS.has(child.type))
+  return spacedParts(text, [node, ...redirects]).trim()
+}
+
+const REDIRECTS = new Set(["file_redirect", "heredoc_redirect", "herestring_redirect"])
+
+// For "a | b > x" and "a && b > x", tree-sitter wraps the whole pipeline or list
+// in the redirected_statement, but bash applies "> x" to the last command only.
+function trailingRedirect(node: Node) {
+  let body = node
+  while (body.parent && (body.parent.type === "pipeline" || body.parent.type === "list")) {
+    if (!body.parent.lastChild?.equals(body)) return undefined
+    body = body.parent
+  }
+  if (body === node || body.parent?.type !== "redirected_statement") return undefined
+  return body.parent
+}
+
+// tree-sitter-bash silently skips a bare "-" before "2>e", leaving a statement
+// with only redirections. Return the skipped text so the command is still asked.
+function skippedName(node: Node, input: string) {
+  if (node.type !== "redirected_statement") return ""
+  if (!node.children.every((child) => child && REDIRECTS.has(child.type))) return ""
+  let before: Node | null = node
+  while (before && !before.previousSibling) before = before.parent
+  const start = before?.previousSibling?.endIndex ?? 0
+  return input.slice(start, node.startIndex).trim()
 }
 
 const NESTED = new Set(["command", "command_elements", "file_redirect"])
-// A gap is spaces, tabs, and line continuations ("\" or "`" before a newline).
-// A continuation with no whitespace beside it joins words in bash, so it is not a gap.
+// A gap is spaces, tabs, and line continuations (bash "\" or PowerShell "`" before
+// a newline; bash "\" before "\r\n" is not one). A bare one joins words instead.
 function isGap(text: string, afterSpace: boolean) {
-  if (!/^(?:[ \t]|[\\`]\r?\n)+$/.test(text)) return false
+  if (!/^(?:[ \t]|\\\n|`\r?\n)+$/.test(text)) return false
   return afterSpace || /[ \t]/.test(text)
 }
+
+// Bash deletes backslash-newline before splitting words, so "r\<newline>m" is "rm".
+const isJoin = (text: string) => /^(?:\\\n)+$/.test(text)
 
 // Rebuild a command's text with each whitespace gap between its parsed parts
 // shrunk to one space, so spacing can't change which permission rule matches.
 // Text inside a part (quotes, escapes, $'...') is kept exactly.
 function spaced(node: Node): string {
-  const text = node.text
+  return spacedParts(node.text, node.children)
+}
+
+function spacedParts(text: string, children: (Node | null)[]): string {
   let out = ""
   let cursor = 0
   // PowerShell can split one gap into a separator node plus a raw "`\n" after it,
   // so whitespace pieces that touch each other still produce only one space.
   let afterSpace = false
-  for (let i = 0; i < node.childCount; i++) {
-    const child = node.child(i)
+  for (const child of children) {
     if (!child) continue
     const at = text.indexOf(child.text, cursor)
     if (at < 0) return text
@@ -147,6 +185,8 @@ function spaced(node: Node): string {
     if (isGap(gap, afterSpace)) {
       if (!afterSpace) out += " "
       afterSpace = true
+    } else if (isJoin(gap)) {
+      afterSpace = false
     } else if (gap) {
       out += gap
       afterSpace = false
@@ -167,11 +207,15 @@ function spaced(node: Node): string {
 export async function permissionPatterns(command: string, ps = false) {
   const tree = (await parser())[ps ? "ps" : "bash"].parse(command)
   if (!tree) throw new Error("Failed to parse command")
-  return commands(tree.rootNode).map(source)
+  return commands(tree.rootNode, command).map((node) => source(node, command))
 }
 
-function commands(node: Node) {
-  return node.descendantsOfType("command").filter((child): child is Node => Boolean(child))
+// Every command node, plus any statement whose command name the parser skipped.
+function commands(node: Node, input: string) {
+  return node
+    .descendantsOfType(["command", "redirected_statement"])
+    .filter((child): child is Node => Boolean(child))
+    .filter((child) => child.type === "command" || skippedName(child, input) !== "")
 }
 
 function unquote(text: string) {
@@ -427,6 +471,7 @@ export const ShellTool = Tool.define(
 
     const collect = Effect.fn("ShellTool.collect")(function* (
       root: Node,
+      input: string,
       cwd: string,
       ps: boolean,
       shell: string,
@@ -439,8 +484,9 @@ export const ShellTool = Tool.define(
       }
       const shellKind = ShellID.toKind(Shell.name(shell))
 
-      for (const node of commands(root)) {
-        const command = parts(node)
+      for (const node of commands(root, input)) {
+        const skipped = skippedName(node, input)
+        const command = skipped ? [{ type: "command_name", text: skipped }] : parts(node)
         const tokens = command.map((item) => item.text)
         const cmd = ps || shellKind === "cmd" ? tokens[0]?.toLowerCase() : tokens[0]
 
@@ -455,7 +501,7 @@ export const ShellTool = Tool.define(
         }
 
         if (tokens.length && (!cmd || !CWD.has(cmd))) {
-          scan.patterns.add(source(node))
+          scan.patterns.add(source(node, input))
           scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
         }
       }
@@ -672,7 +718,7 @@ export const ShellTool = Tool.define(
                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
                     Effect.sync(() => tree.delete()),
                   )
-                  const scan = yield* collect(tree.rootNode, cwd, ps, shell, instanceCtx)
+                  const scan = yield* collect(tree.rootNode, params.command, cwd, ps, shell, instanceCtx)
                   if (!containsPath(cwd, instanceCtx)) scan.dirs.add(cwd)
                   yield* ask(ctx, scan, params)
                 }),
