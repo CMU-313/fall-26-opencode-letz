@@ -207,7 +207,12 @@ function spacedParts(text: string, children: (Node | null)[]): string {
 export async function permissionPatterns(command: string, ps = false) {
   const tree = (await parser())[ps ? "ps" : "bash"].parse(command)
   if (!tree) throw new Error("Failed to parse command")
-  return commands(tree.rootNode, command).map((node) => source(node, command))
+  // Trees live in WebAssembly memory that garbage collection does not free.
+  try {
+    return commands(tree.rootNode, command).map((node) => source(node, command))
+  } finally {
+    tree.delete()
+  }
 }
 
 // Every command node, plus any statement whose command name the parser skipped.
