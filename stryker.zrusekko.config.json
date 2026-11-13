@@ -1,0 +1,20 @@
+{
+  "testRunner": "command",
+  "commandRunner": { "command": "cd packages/opencode && bun test test/permission/permission.property.test.ts" },
+  "mutate": [
+    "packages/opencode/src/permission/index.ts:28-37",
+    "packages/opencode/src/permission/index.ts:70-82",
+    "packages/core/src/util/wildcard.ts:3-13",
+    "packages/opencode/src/agent/agent.ts:130-134",
+    "packages/core/src/v1/permission.ts:24-25"
+  ],
+  "coverageAnalysis": "off",
+  "reporters": ["html", "clear-text", "progress"],
+  "inPlace": true,
+  "ignorePatterns": [
+    "/.husky/**",
+    "/packages/console/app/public/email"
+  ],
+  "timeoutMS": 30000,
+  "concurrency": 1
+}
