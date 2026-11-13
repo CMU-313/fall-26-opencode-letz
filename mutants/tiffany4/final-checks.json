@@ -1,0 +1,50 @@
+{
+  "focused-tests": {
+    "exit_code": 0,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "test/tool/directory_summary.property.test.ts",
+      "test/tool/directory_summary.test.ts",
+      "test/tool/parameters.test.ts",
+      "test/tool/registry.test.ts"
+    ],
+    "seconds": 19.95,
+    "log": "logs/final-focused-tests.log"
+  },
+  "typecheck": {
+    "exit_code": 0,
+    "command": [
+      "bun",
+      "typecheck"
+    ],
+    "seconds": 7.01,
+    "log": "logs/final-typecheck.log"
+  },
+  "lint": {
+    "exit_code": 0,
+    "command": [
+      "bun",
+      "run",
+      "lint",
+      "packages/opencode/test/tool/directory_summary.property.test.ts"
+    ],
+    "seconds": 0.18,
+    "log": "logs/final-lint.log"
+  },
+  "build": {
+    "exit_code": 0,
+    "command": [
+      "bun",
+      "run",
+      "build",
+      "--single",
+      "--skip-install",
+      "--skip-embed-web-ui"
+    ],
+    "seconds": 2.22,
+    "log": "logs/final-build.log"
+  }
+}

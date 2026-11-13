@@ -1,0 +1,83 @@
+Command: bun test --timeout 60000 test/tool/directory_summary.property.test.ts --test-name-pattern R4 invariant:
+Working directory: /Users/ttscl/opencode/packages/opencode
+Seed: 17313
+
+bun test v1.3.14 (0d9b296a)
+
+test/tool/directory_summary.property.test.ts:
+[04:06:24.594] ERROR (#2): 2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0:0:0", endOnFailure: true }
+Counterexample: [[0,false]]
+Shrunk 2 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (native:7:39)
+
+311 |           const info = yield* DirectorySummaryTool
+312 |           const tool = yield* info.init()
+313 |           const result = yield* tool.execute({ path: name }, ctx).pipe(Effect.exit)
+314 |           expect(Exit.isFailure(result)).toBe(true)
+315 |           if (Exit.isSuccess(result)) throw new Error("Expected missing directory failure")
+316 |           expect(String(Cause.squash(result.cause))).toContain(
+      ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "Directory not found: /private/var/folders/kn/6g6w44sd75x88t52q2b_tcmc0000gn/T/opencode-test-4nb27n1zzq8/missing0"
+Received: "Error: Directory is not accessible: /private/var/folders/kn/6g6w44sd75x88t52q2b_tcmc0000gn/T/opencode-test-4nb27n1zzq8/missing0"
+
+      at toContain (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:316:54
+
+2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0:0:0", endOnFailure: true }
+Counterexample: [[0,false]]
+Shrunk 2 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (native:7:39)
+
+311 |           const info = yield* DirectorySummaryTool
+312 |           const tool = yield* info.init()
+313 |           const result = yield* tool.execute({ path: name }, ctx).pipe(Effect.exit)
+314 |           expect(Exit.isFailure(result)).toBe(true)
+315 |           if (Exit.isSuccess(result)) throw new Error("Expected missing directory failure")
+316 |           expect(String(Cause.squash(result.cause))).toContain(
+      ^
+error: expect(received).toContain(expected)
+
+Expected to contain: "Directory not found: /private/var/folders/kn/6g6w44sd75x88t52q2b_tcmc0000gn/T/opencode-test-4nb27n1zzq8/missing0"
+Received: "Error: Directory is not accessible: /private/var/folders/kn/6g6w44sd75x88t52q2b_tcmc0000gn/T/opencode-test-4nb27n1zzq8/missing0"
+
+      at toContain (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:316:54
+      at ~effect/Effect/successCont (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at /Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/Effect.js:8149:9
+      at processTicksAndRejections (native:7:39)
+(fail) R4 invariant: missing and deleted directories have explicit errors [47.99ms]
+
+ 0 pass
+ 8 filtered out
+ 1 fail
+ 6 expect() calls
+Ran 1 test across 1 file. [780.00ms]

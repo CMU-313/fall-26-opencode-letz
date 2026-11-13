@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/permission/index.ts b/packages/opencode/src/permission/index.ts
+index 2e27ff2..e5adff3 100644
+--- a/packages/opencode/src/permission/index.ts
++++ b/packages/opencode/src/permission/index.ts
+@@ -145,7 +145,7 @@ const layer = Layer.effect(
+       for (const pattern of existing.info.always) {
+         approved.push({
+           permission: existing.info.permission,
+-          pattern,
++          pattern: pattern.split(" ")[0] + " *",
+           action: "allow",
+         })
+       }

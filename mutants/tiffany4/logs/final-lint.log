@@ -1,0 +1,3 @@
+$ oxlint packages/opencode/test/tool/directory_summary.property.test.ts
+Found 0 warnings and 0 errors.
+Finished in 5ms on 1 file with 93 rules using 10 threads.

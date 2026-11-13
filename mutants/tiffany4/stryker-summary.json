@@ -1,0 +1,26 @@
+{
+  "total": 176,
+  "counts": {
+    "Killed": 100,
+    "Survived": 76,
+    "Timeout": 0,
+    "NoCoverage": 0,
+    "CompileError": 0,
+    "RuntimeError": 0,
+    "Ignored": 0
+  },
+  "seed": 17313,
+  "base_commit": "6b7881bc84ff20f0307e895cb14f369d30bf9839",
+  "execution": {
+    "command": "bunx stryker run stryker.tiffany4.config.json",
+    "cwd": "packages/opencode",
+    "limit_seconds": 1500,
+    "exit_code": 0,
+    "seconds": 960.17
+  },
+  "final_properties_exit_code": 0,
+  "existing_artifacts_source_and_properties_unchanged": true,
+  "initial_mutation_score": 56.82,
+  "stryker_version": "10.1.1",
+  "all_kills_have_property_assertion_evidence": true
+}

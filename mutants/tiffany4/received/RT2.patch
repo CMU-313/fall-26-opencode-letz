@@ -1,0 +1,11 @@
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -319,7 +319,7 @@
+               }
+               // Imports that stay inside the summarized directory, including its subdirectories, are internal structure.
+               if (FSUtil.contains(directory, resolved.target)) continue
+-              const key = `${file.name}\0${resolved.target}`
++              const key = `${file.name}\0${path.basename(resolved.target)}`
+               if (dependencies.has(key)) continue
+               dependencies.set(key, {
+                 file: file.name,

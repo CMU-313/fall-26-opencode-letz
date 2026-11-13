@@ -1,0 +1,11 @@
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -245,7 +245,7 @@
+               if (!target) return { type: "unresolved" }
+               return { type: "dependency", kind: "subpath", target, directory: path.dirname(target) }
+             }
+-            if (specifier.startsWith("node:") || specifier.startsWith("bun:") || specifier === "bun") {
++            if (specifier.startsWith("node:") || specifier.endsWith("bun:") || specifier === "bun") {
+               return { type: "external", kind: "builtin", name: specifier }
+             }
+             const parts = specifier.split("/")

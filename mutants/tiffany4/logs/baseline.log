@@ -1,0 +1,21 @@
+Command: bun test --timeout 60000 test/tool/directory_summary.property.test.ts
+Working directory: /Users/ttscl/opencode/packages/opencode
+Seed: 17313
+
+bun test v1.3.14 (0d9b296a)
+
+test/tool/directory_summary.property.test.ts:
+(pass) tool.directory_summary properties > P1 model/oracle: resolved dependency targets [1014.28ms]
+(pass) tool.directory_summary properties > P2 metamorphic: duplicate imports preserve frequency [1974.89ms]
+(pass) tool.directory_summary properties > P3 metamorphic: internal and nested files preserve outward dependencies [1740.62ms]
+(pass) tool.directory_summary properties > P4 model/oracle: external package and builtin classification [1470.02ms]
+(pass) R2 invariant: purpose communicates uncertainty [450.94ms]
+(pass) R3 invariant: purpose is a concise overview [1493.39ms]
+(pass) R4 invariant: missing and deleted directories have explicit errors [190.26ms]
+(pass) R5 metamorphic: additions and deletions refresh the file listing [1852.93ms]
+(pass) R6 metamorphic: comparable directory renames preserve purpose and roles [730.86ms]
+
+ 9 pass
+ 0 fail
+ 5700 expect() calls
+Ran 9 tests across 1 file. [12.76s]

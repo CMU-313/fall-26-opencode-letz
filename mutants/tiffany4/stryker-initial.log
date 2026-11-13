@@ -1,0 +1,505 @@
+[32m23:10:35 (58226) INFO ProjectReader[39m Found 1 of 777 file(s) to be mutated.
+Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[32m23:10:35 (58226) INFO Instrumenter[39m Instrumented 1 source file(s) with 176 mutant(s)
+[32m23:10:35 (58226) INFO ConcurrencyTokenProvider[39m Creating 4 test runner process(es).
+[32m23:10:35 (58226) INFO BroadcastReporter[39m Detected that current console does not support the "progress" reporter, downgrading to "progress-append-only" reporter
+[32m23:10:35 (58226) INFO DryRunExecutor[39m Starting initial test run (command test runner with "off" coverage analysis). This may take a while.
+[32m23:10:51 (58226) INFO DryRunExecutor[39m Initial test run succeeded. Ran 1 tests in 15 seconds (net 15291 ms, overhead 2 ms).
+Mutation testing 2% (elapsed: <1m, remaining: ~5m) 5/176 tested (0 survived, 0 timed out)
+Mutation testing 2% (elapsed: <1m, remaining: ~11m) 5/176 tested (0 survived, 0 timed out)
+Mutation testing 3% (elapsed: <1m, remaining: ~12m) 7/176 tested (0 survived, 0 timed out)
+Mutation testing 6% (elapsed: <1m, remaining: ~10m) 11/176 tested (2 survived, 0 timed out)
+Mutation testing 8% (elapsed: <1m, remaining: ~8m) 15/176 tested (2 survived, 0 timed out)
+Mutation testing 9% (elapsed: ~1m, remaining: ~9m) 17/176 tested (4 survived, 0 timed out)
+Mutation testing 10% (elapsed: ~1m, remaining: ~10m) 18/176 tested (5 survived, 0 timed out)
+Mutation testing 10% (elapsed: ~1m, remaining: ~11m) 19/176 tested (6 survived, 0 timed out)
+Mutation testing 11% (elapsed: ~1m, remaining: ~11m) 21/176 tested (8 survived, 0 timed out)
+Mutation testing 13% (elapsed: ~1m, remaining: ~11m) 23/176 tested (9 survived, 0 timed out)
+Mutation testing 13% (elapsed: ~1m, remaining: ~12m) 23/176 tested (9 survived, 0 timed out)
+Mutation testing 16% (elapsed: ~2m, remaining: ~10m) 29/176 tested (12 survived, 0 timed out)
+Mutation testing 17% (elapsed: ~2m, remaining: ~10m) 30/176 tested (13 survived, 0 timed out)
+Mutation testing 17% (elapsed: ~2m, remaining: ~11m) 30/176 tested (13 survived, 0 timed out)
+Mutation testing 17% (elapsed: ~2m, remaining: ~11m) 31/176 tested (14 survived, 0 timed out)
+Mutation testing 19% (elapsed: ~2m, remaining: ~11m) 34/176 tested (16 survived, 0 timed out)
+Mutation testing 20% (elapsed: ~2m, remaining: ~11m) 36/176 tested (17 survived, 0 timed out)
+Mutation testing 20% (elapsed: ~3m, remaining: ~11m) 36/176 tested (17 survived, 0 timed out)
+Mutation testing 22% (elapsed: ~3m, remaining: ~11m) 39/176 tested (20 survived, 0 timed out)
+Mutation testing 22% (elapsed: ~3m, remaining: ~11m) 40/176 tested (21 survived, 0 timed out)
+Mutation testing 22% (elapsed: ~3m, remaining: ~11m) 40/176 tested (21 survived, 0 timed out)
+Mutation testing 25% (elapsed: ~3m, remaining: ~10m) 45/176 tested (23 survived, 0 timed out)
+Mutation testing 28% (elapsed: ~3m, remaining: ~9m) 50/176 tested (24 survived, 0 timed out)
+Mutation testing 28% (elapsed: ~4m, remaining: ~10m) 50/176 tested (24 survived, 0 timed out)
+Mutation testing 28% (elapsed: ~4m, remaining: ~10m) 50/176 tested (24 survived, 0 timed out)
+Mutation testing 30% (elapsed: ~4m, remaining: ~9m) 54/176 tested (27 survived, 0 timed out)
+Mutation testing 32% (elapsed: ~4m, remaining: ~9m) 57/176 tested (28 survived, 0 timed out)
+Mutation testing 33% (elapsed: ~4m, remaining: ~9m) 59/176 tested (28 survived, 0 timed out)
+Mutation testing 35% (elapsed: ~4m, remaining: ~8m) 62/176 tested (28 survived, 0 timed out)
+Mutation testing 36% (elapsed: ~5m, remaining: ~8m) 64/176 tested (28 survived, 0 timed out)
+Mutation testing 36% (elapsed: ~5m, remaining: ~8m) 65/176 tested (29 survived, 0 timed out)
+Mutation testing 38% (elapsed: ~5m, remaining: ~8m) 67/176 tested (30 survived, 0 timed out)
+Mutation testing 38% (elapsed: ~5m, remaining: ~8m) 68/176 tested (30 survived, 0 timed out)
+Mutation testing 40% (elapsed: ~5m, remaining: ~8m) 72/176 tested (31 survived, 0 timed out)
+Mutation testing 42% (elapsed: ~5m, remaining: ~7m) 75/176 tested (31 survived, 0 timed out)
+Mutation testing 43% (elapsed: ~6m, remaining: ~7m) 76/176 tested (31 survived, 0 timed out)
+Mutation testing 44% (elapsed: ~6m, remaining: ~7m) 79/176 tested (31 survived, 0 timed out)
+Mutation testing 45% (elapsed: ~6m, remaining: ~7m) 80/176 tested (31 survived, 0 timed out)
+Mutation testing 47% (elapsed: ~6m, remaining: ~7m) 83/176 tested (31 survived, 0 timed out)
+Mutation testing 49% (elapsed: ~6m, remaining: ~6m) 87/176 tested (32 survived, 0 timed out)
+Mutation testing 53% (elapsed: ~6m, remaining: ~5m) 95/176 tested (32 survived, 0 timed out)
+Mutation testing 56% (elapsed: ~7m, remaining: ~5m) 99/176 tested (32 survived, 0 timed out)
+Mutation testing 56% (elapsed: ~7m, remaining: ~5m) 99/176 tested (32 survived, 0 timed out)
+Mutation testing 56% (elapsed: ~7m, remaining: ~5m) 99/176 tested (32 survived, 0 timed out)
+Mutation testing 58% (elapsed: ~7m, remaining: ~5m) 103/176 tested (36 survived, 0 timed out)
+Mutation testing 58% (elapsed: ~7m, remaining: ~5m) 103/176 tested (36 survived, 0 timed out)
+Mutation testing 60% (elapsed: ~7m, remaining: ~5m) 106/176 tested (36 survived, 0 timed out)
+Mutation testing 60% (elapsed: ~8m, remaining: ~5m) 106/176 tested (36 survived, 0 timed out)
+Mutation testing 62% (elapsed: ~8m, remaining: ~4m) 110/176 tested (37 survived, 0 timed out)
+Mutation testing 62% (elapsed: ~8m, remaining: ~5m) 110/176 tested (37 survived, 0 timed out)
+Mutation testing 64% (elapsed: ~8m, remaining: ~4m) 114/176 tested (37 survived, 0 timed out)
+Mutation testing 65% (elapsed: ~8m, remaining: ~4m) 115/176 tested (37 survived, 0 timed out)
+Mutation testing 67% (elapsed: ~8m, remaining: ~4m) 118/176 tested (37 survived, 0 timed out)
+Mutation testing 68% (elapsed: ~9m, remaining: ~4m) 120/176 tested (37 survived, 0 timed out)
+Mutation testing 68% (elapsed: ~9m, remaining: ~4m) 120/176 tested (37 survived, 0 timed out)
+Mutation testing 69% (elapsed: ~9m, remaining: ~4m) 123/176 tested (39 survived, 0 timed out)
+Mutation testing 71% (elapsed: ~9m, remaining: ~3m) 126/176 tested (40 survived, 0 timed out)
+Mutation testing 72% (elapsed: ~9m, remaining: ~3m) 127/176 tested (40 survived, 0 timed out)
+Mutation testing 72% (elapsed: ~9m, remaining: ~3m) 127/176 tested (40 survived, 0 timed out)
+Mutation testing 72% (elapsed: ~10m, remaining: ~3m) 128/176 tested (41 survived, 0 timed out)
+Mutation testing 74% (elapsed: ~10m, remaining: ~3m) 131/176 tested (44 survived, 0 timed out)
+Mutation testing 75% (elapsed: ~10m, remaining: ~3m) 133/176 tested (44 survived, 0 timed out)
+Mutation testing 76% (elapsed: ~10m, remaining: ~3m) 134/176 tested (44 survived, 0 timed out)
+Mutation testing 77% (elapsed: ~10m, remaining: ~3m) 136/176 tested (45 survived, 0 timed out)
+Mutation testing 77% (elapsed: ~10m, remaining: ~3m) 136/176 tested (45 survived, 0 timed out)
+Mutation testing 78% (elapsed: ~11m, remaining: ~3m) 138/176 tested (47 survived, 0 timed out)
+Mutation testing 78% (elapsed: ~11m, remaining: ~2m) 139/176 tested (48 survived, 0 timed out)
+Mutation testing 80% (elapsed: ~11m, remaining: ~2m) 141/176 tested (49 survived, 0 timed out)
+Mutation testing 80% (elapsed: ~11m, remaining: ~2m) 142/176 tested (50 survived, 0 timed out)
+Mutation testing 81% (elapsed: ~11m, remaining: ~2m) 143/176 tested (51 survived, 0 timed out)
+Mutation testing 82% (elapsed: ~11m, remaining: ~2m) 145/176 tested (53 survived, 0 timed out)
+Mutation testing 82% (elapsed: ~12m, remaining: ~2m) 146/176 tested (54 survived, 0 timed out)
+Mutation testing 84% (elapsed: ~12m, remaining: ~2m) 148/176 tested (55 survived, 0 timed out)
+Mutation testing 84% (elapsed: ~12m, remaining: ~2m) 149/176 tested (56 survived, 0 timed out)
+Mutation testing 85% (elapsed: ~12m, remaining: ~2m) 150/176 tested (57 survived, 0 timed out)
+Mutation testing 86% (elapsed: ~12m, remaining: ~1m) 152/176 tested (59 survived, 0 timed out)
+Mutation testing 88% (elapsed: ~12m, remaining: ~1m) 155/176 tested (60 survived, 0 timed out)
+Mutation testing 88% (elapsed: ~13m, remaining: ~1m) 156/176 tested (60 survived, 0 timed out)
+Mutation testing 90% (elapsed: ~13m, remaining: ~1m) 159/176 tested (60 survived, 0 timed out)
+Mutation testing 90% (elapsed: ~13m, remaining: ~1m) 159/176 tested (60 survived, 0 timed out)
+Mutation testing 90% (elapsed: ~13m, remaining: ~1m) 159/176 tested (60 survived, 0 timed out)
+Mutation testing 90% (elapsed: ~13m, remaining: ~1m) 160/176 tested (61 survived, 0 timed out)
+Mutation testing 92% (elapsed: ~13m, remaining: ~1m) 163/176 tested (64 survived, 0 timed out)
+Mutation testing 92% (elapsed: ~14m, remaining: ~1m) 163/176 tested (64 survived, 0 timed out)
+Mutation testing 93% (elapsed: ~14m, remaining: ~1m) 164/176 tested (65 survived, 0 timed out)
+Mutation testing 93% (elapsed: ~14m, remaining: ~1m) 164/176 tested (65 survived, 0 timed out)
+Mutation testing 94% (elapsed: ~14m, remaining: <1m) 167/176 tested (68 survived, 0 timed out)
+Mutation testing 94% (elapsed: ~14m, remaining: <1m) 167/176 tested (68 survived, 0 timed out)
+Mutation testing 95% (elapsed: ~14m, remaining: <1m) 168/176 tested (69 survived, 0 timed out)
+Mutation testing 96% (elapsed: ~15m, remaining: <1m) 170/176 tested (71 survived, 0 timed out)
+Mutation testing 97% (elapsed: ~15m, remaining: <1m) 171/176 tested (72 survived, 0 timed out)
+Mutation testing 97% (elapsed: ~15m, remaining: <1m) 171/176 tested (72 survived, 0 timed out)
+Mutation testing 97% (elapsed: ~15m, remaining: <1m) 172/176 tested (73 survived, 0 timed out)
+Mutation testing 98% (elapsed: ~15m, remaining: <1m) 174/176 tested (75 survived, 0 timed out)
+
+All tests
+  ✓ All tests (killed 100)
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:107:15
+-             if (stat.type !== "Directory") return yield* Effect.fail(new Error(`Path is not a directory: ${directory}`))
++             if (false) return yield* Effect.fail(new Error(`Path is not a directory: ${directory}`))
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:107:78
+-             if (stat.type !== "Directory") return yield* Effect.fail(new Error(`Path is not a directory: ${directory}`))
++             if (stat.type !== "Directory") return yield* Effect.fail(new Error(``))
+
+[Survived] ArrowFunction
+src/tool/directory_summary.ts:110:13
+-               (a, b) => a.name.localeCompare(b.name),
++               () => undefined,
+
+[Survived] MethodExpression
+src/tool/directory_summary.ts:114:20
+-               files: entries
+-                 .filter((entry) => entry.type === "file")
++               files: entries
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:115:34
+-                 .filter((entry) => entry.type === "file")
++                 .filter((entry) => true)
+
+[Survived] MethodExpression
+src/tool/directory_summary.ts:117:29
+-               subdirectories: entries.filter((entry) => entry.type === "directory").map((entry) => entry.name),
++               subdirectories: entries.map((entry) => entry.name),
+
+[Survived] ArrowFunction
+src/tool/directory_summary.ts:117:44
+-               subdirectories: entries.filter((entry) => entry.type === "directory").map((entry) => entry.name),
++               subdirectories: entries.filter(() => undefined).map((entry) => entry.name),
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:117:55
+-               subdirectories: entries.filter((entry) => entry.type === "directory").map((entry) => entry.name),
++               subdirectories: entries.filter((entry) => true).map((entry) => entry.name),
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:117:55
+-               subdirectories: entries.filter((entry) => entry.type === "directory").map((entry) => entry.name),
++               subdirectories: entries.filter((entry) => false).map((entry) => entry.name),
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:117:55
+-               subdirectories: entries.filter((entry) => entry.type === "directory").map((entry) => entry.name),
++               subdirectories: entries.filter((entry) => entry.type !== "directory").map((entry) => entry.name),
+
+[Survived] ArrowFunction
+src/tool/directory_summary.ts:117:87
+-               subdirectories: entries.filter((entry) => entry.type === "directory").map((entry) => entry.name),
++               subdirectories: entries.filter((entry) => entry.type === "directory").map(() => undefined),
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:117:70
+-               subdirectories: entries.filter((entry) => entry.type === "directory").map((entry) => entry.name),
++               subdirectories: entries.filter((entry) => entry.type === "").map((entry) => entry.name),
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:218:30
+-                 return { type: "dependency", kind: "relative", target, directory: path.dirname(target) }
++                 return { type: "", kind: "relative", target, directory: path.dirname(target) }
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:222:19
+-                   ? specifier.startsWith(item.prefix) &&
+-                     specifier.endsWith(item.suffix) &&
+-                     specifier.length >= item.prefix.length + item.suffix.length
++                   ? true
+
+[Survived] LogicalOperator
+src/tool/directory_summary.ts:222:19
+-                   ? specifier.startsWith(item.prefix) &&
+-                     specifier.endsWith(item.suffix) &&
+-                     specifier.length >= item.prefix.length + item.suffix.length
++                   ? specifier.startsWith(item.prefix) && specifier.endsWith(item.suffix) || specifier.length >= item.prefix.length + item.suffix.length
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:222:19
+-                   ? specifier.startsWith(item.prefix) &&
+-                     specifier.endsWith(item.suffix) &&
++                   ? true &&
+
+[Survived] LogicalOperator
+src/tool/directory_summary.ts:222:19
+-                   ? specifier.startsWith(item.prefix) &&
+-                     specifier.endsWith(item.suffix) &&
++                   ? specifier.startsWith(item.prefix) || specifier.endsWith(item.suffix) &&
+
+[Survived] MethodExpression
+src/tool/directory_summary.ts:223:19
+-                     specifier.endsWith(item.suffix) &&
++                     specifier.startsWith(item.suffix) &&
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:224:19
+-                     specifier.length >= item.prefix.length + item.suffix.length
++                     true
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:224:19
+-                     specifier.length >= item.prefix.length + item.suffix.length
++                     specifier.length > item.prefix.length + item.suffix.length
+
+[Survived] ArithmeticOperator
+src/tool/directory_summary.ts:224:39
+-                     specifier.length >= item.prefix.length + item.suffix.length
++                     specifier.length >= item.prefix.length - item.suffix.length
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:225:19
+-                   : specifier === item.prefix,
++                   : false,
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:225:19
+-                   : specifier === item.prefix,
++                   : true,
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:225:19
+-                   : specifier === item.prefix,
++                   : specifier !== item.prefix,
+
+[Survived] ArithmeticOperator
+src/tool/directory_summary.ts:229:56
+-                   ? specifier.slice(alias.prefix.length, specifier.length - alias.suffix.length)
++                   ? specifier.slice(alias.prefix.length, specifier.length + alias.suffix.length)
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:230:19
+-                   : ""
++                   : "Stryker was here!"
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:233:21
+-                   if (resolved)
++                   if (true)
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:234:34
+-                     return { type: "dependency", kind: "alias", target: resolved, directory: path.dirname(resolved) }
++                     return { type: "", kind: "alias", target: resolved, directory: path.dirname(resolved) }
+
+[Survived] MethodExpression
+src/tool/directory_summary.ts:248:50
+-               if (specifier.startsWith("node:") || specifier.startsWith("bun:") || specifier === "bun") {
++               if (specifier.startsWith("node:") || specifier.endsWith("bun:") || specifier === "bun") {
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:248:82
+-               if (specifier.startsWith("node:") || specifier.startsWith("bun:") || specifier === "bun") {
++               if (specifier.startsWith("node:") || specifier.startsWith("bun:") || false) {
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:248:96
+-               if (specifier.startsWith("node:") || specifier.startsWith("bun:") || specifier === "bun") {
++               if (specifier.startsWith("node:") || specifier.startsWith("bun:") || specifier === "") {
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:255:17
+-               if (!pkg) return { type: "external", kind: "package", name }
++               if (true) return { type: "external", kind: "package", name }
+
+[Survived] ArrowFunction
+src/tool/directory_summary.ts:394:15
+-       .toSorted((a, b) => b.imports - a.imports || a.directory.localeCompare(b.directory))
++       .toSorted(() => undefined)
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:394:25
+-       .toSorted((a, b) => b.imports - a.imports || a.directory.localeCompare(b.directory))
++       .toSorted((a, b) => true)
+
+[Survived] LogicalOperator
+src/tool/directory_summary.ts:394:25
+-       .toSorted((a, b) => b.imports - a.imports || a.directory.localeCompare(b.directory))
++       .toSorted((a, b) => b.imports - a.imports && a.directory.localeCompare(b.directory))
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:394:25
+-       .toSorted((a, b) => b.imports - a.imports || a.directory.localeCompare(b.directory))
++       .toSorted((a, b) => false)
+
+[Survived] ArithmeticOperator
+src/tool/directory_summary.ts:394:25
+-       .toSorted((a, b) => b.imports - a.imports || a.directory.localeCompare(b.directory))
++       .toSorted((a, b) => b.imports + a.imports || a.directory.localeCompare(b.directory))
+
+[Survived] ArrowFunction
+src/tool/directory_summary.ts:414:30
+-     const tests = files.filter((file) => file.role === "test").length
++     const tests = files.filter(() => undefined).length
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:414:40
+-     const tests = files.filter((file) => file.role === "test").length
++     const tests = files.filter((file) => false).length
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:414:54
+-     const tests = files.filter((file) => file.role === "test").length
++     const tests = files.filter((file) => file.role === "").length
+
+[Survived] LogicalOperator
+src/tool/directory_summary.ts:416:7
+-     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
++     if (/^(?:test|tests|__tests__|spec)$/i.test(name) && tests > 0 && tests * 2 >= code)
+
+[Survived] Regex
+src/tool/directory_summary.ts:416:7
+-     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
++     if (/(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:416:7
+-     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
++     if (false)
+
+[Survived] Regex
+src/tool/directory_summary.ts:416:7
+-     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
++     if (/^(?:test|tests|__tests__|spec)/i.test(name) || (tests > 0 && tests * 2 >= code))
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:416:57
+-     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
++     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (false))
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:416:70
+-     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
++     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && true))
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:416:70
+-     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
++     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 > code))
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:416:70
+-     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
++     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 < code))
+
+[Survived] ArithmeticOperator
+src/tool/directory_summary.ts:416:70
+-     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
++     if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests / 2 >= code))
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:417:12
+-       return "Likely contains automated tests and supporting fixtures."
++       return ""
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:418:7
+-     if (/^(?:docs?|documentation)$/i.test(name)) return "Likely contains project documentation."
++     if (false) return "Likely contains project documentation."
+
+[Survived] Regex
+src/tool/directory_summary.ts:418:7
+-     if (/^(?:docs?|documentation)$/i.test(name)) return "Likely contains project documentation."
++     if (/^(?:docs?|documentation)/i.test(name)) return "Likely contains project documentation."
+
+[Survived] Regex
+src/tool/directory_summary.ts:418:7
+-     if (/^(?:docs?|documentation)$/i.test(name)) return "Likely contains project documentation."
++     if (/(?:docs?|documentation)$/i.test(name)) return "Likely contains project documentation."
+
+[Survived] Regex
+src/tool/directory_summary.ts:418:7
+-     if (/^(?:docs?|documentation)$/i.test(name)) return "Likely contains project documentation."
++     if (/^(?:docs|documentation)$/i.test(name)) return "Likely contains project documentation."
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:418:55
+-     if (/^(?:docs?|documentation)$/i.test(name)) return "Likely contains project documentation."
++     if (/^(?:docs?|documentation)$/i.test(name)) return ""
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:419:7
+-     if (/^(?:scripts?|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
++     if (false) return "Likely contains tools or automation scripts."
+
+[Survived] Regex
+src/tool/directory_summary.ts:419:7
+-     if (/^(?:scripts?|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
++     if (/(?:scripts?|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
+
+[Survived] Regex
+src/tool/directory_summary.ts:419:7
+-     if (/^(?:scripts?|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
++     if (/^(?:scripts?|bin)/i.test(name)) return "Likely contains tools or automation scripts."
+
+[Survived] Regex
+src/tool/directory_summary.ts:419:7
+-     if (/^(?:scripts?|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
++     if (/^(?:scripts|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:419:48
+-     if (/^(?:scripts?|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
++     if (/^(?:scripts?|bin)$/i.test(name)) return ""
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:421:7
+-     if (files.length === 0 && subdirectories.length > 0)
++     if (false)
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:421:7
+-     if (files.length === 0 && subdirectories.length > 0)
++     if (true && subdirectories.length > 0)
+
+[Survived] LogicalOperator
+src/tool/directory_summary.ts:421:7
+-     if (files.length === 0 && subdirectories.length > 0)
++     if (files.length === 0 || subdirectories.length > 0)
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:421:7
+-     if (files.length === 0 && subdirectories.length > 0)
++     if (files.length !== 0 && subdirectories.length > 0)
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:421:29
+-     if (files.length === 0 && subdirectories.length > 0)
++     if (files.length === 0 && true)
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:421:29
+-     if (files.length === 0 && subdirectories.length > 0)
++     if (files.length === 0 && subdirectories.length <= 0)
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:421:29
+-     if (files.length === 0 && subdirectories.length > 0)
++     if (files.length === 0 && subdirectories.length >= 0)
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:422:12
+-       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++       return ``
+
+[Survived] MethodExpression
+src/tool/directory_summary.ts:422:58
+-       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++       return `Likely groups related modules or packages: ${subdirectories.join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:422:90
+-       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join("")}${subdirectories.length > 5 ? ", ..." : ""}.`
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:422:98
+-       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${true ? ", ..." : ""}.`
+
+[Survived] ConditionalExpression
+src/tool/directory_summary.ts:422:98
+-       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${false ? ", ..." : ""}.`
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:422:98
+-       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length >= 5 ? ", ..." : ""}.`
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:422:126
+-       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? "" : ""}.`
+
+[Survived] EqualityOperator
+src/tool/directory_summary.ts:422:98
+-       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length <= 5 ? ", ..." : ""}.`
+
+[Survived] StringLiteral
+src/tool/directory_summary.ts:422:136
+-       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++       return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : "Stryker was here!"}.`
+
+Ran 1.00 tests per mutant on average.
+----------------------|------------------|----------|-----------|------------|----------|----------|
+                      | % Mutation score |          |           |            |          |          |
+File                  |  total | covered | # killed | # timeout | # survived | # no cov | # errors |
+----------------------|--------|---------|----------|-----------|------------|----------|----------|
+All files             |  56.82 |   56.82 |      100 |         0 |         76 |        0 |        0 |
+ directory_summary.ts |  56.82 |   56.82 |      100 |         0 |         76 |        0 |        0 |
+----------------------|--------|---------|----------|-----------|------------|----------|----------|
+[32m23:26:34 (58226) INFO HtmlReporter[39m Your report can be found at: file:///Users/ttscl/opencode/packages/opencode/reports/mutation/mutation.html
+[32m23:26:34 (58226) INFO JsonReporter[39m Your report can be found at: file:///Users/ttscl/opencode/packages/opencode/reports/mutation/mutation.json
+[32m23:26:34 (58226) INFO MutationTestExecutor[39m Done in 15 minutes and 59 seconds.

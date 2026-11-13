@@ -36,10 +36,10 @@ type Summary = {
   truncated: boolean
   skipped: unknown[]
 }
-const summarize = Effect.fn("DirectorySummaryProperty.summarize")(function* () {
+const summarize = Effect.fn("DirectorySummaryProperty.summarize")(function* (directory = "module") {
   const info = yield* DirectorySummaryTool
   const tool = yield* info.init()
-  const result: Summary = JSON.parse((yield* tool.execute({ path: "module" }, ctx)).output)
+  const result: Summary = JSON.parse((yield* tool.execute({ path: directory }, ctx)).output)
   expect(result.truncated).toBe(false)
   expect(result.skipped).toEqual([])
   return result
@@ -79,32 +79,54 @@ describe("tool.directory_summary properties", () => {
   it.live(
     "P1 model/oracle: resolved dependency targets",
     () =>
-      check(fc.tuple(ids, extension, fc.boolean()), ([targets, ext, alias]) =>
-        provideTmpdirInstance(() =>
-          Effect.gen(function* () {
-            yield* write({
-              "tsconfig.json": JSON.stringify({ compilerOptions: { paths: { "@lib/*": ["lib/*"] } } }),
-              ...Object.fromEntries(targets.map((id) => [`lib/group${id % 3}/item${id}.ts`, "export const value = 1"])),
-              [`module/index.${ext}`]: targets
-                .map((id) => `import "${alias ? "@lib/" : "../lib/"}group${id % 3}/item${id}"`)
-                .join("\n"),
-            })
-            const summary = yield* summarize()
-            expect(summary.dependencies.toSorted((a, b) => a.target.localeCompare(b.target))).toEqual(
-              targets
-                .map((id) => ({
-                  file: `index.${ext}`,
-                  specifier: `${alias ? "@lib/" : "../lib/"}group${id % 3}/item${id}`,
-                  kind: alias ? "alias" : "relative",
-                  target: `lib/group${id % 3}/item${id}.ts`,
-                  directory: `lib/group${id % 3}`,
-                }))
-                .toSorted((a, b) => a.target.localeCompare(b.target)),
-            )
-            expect(summary.unresolvedImports).toEqual([])
-            expect(summary.externalPackages).toEqual([])
-          }),
-        ),
+      check(
+        fc.tuple(ids, extension, fc.boolean(), fc.boolean(), fc.constantFrom("", ".suffix"), fc.boolean()),
+        ([targets, ext, alias, baseUrl, suffix, exact]) =>
+          provideTmpdirInstance(() =>
+            Effect.gen(function* () {
+              const root = baseUrl ? "source-root/" : ""
+              const specifier = (id: number) =>
+                alias ? `@lib/group${id % 3}/item${id}${suffix}` : `../${root}lib/group${id % 3}/item${id}`
+              yield* write({
+                "tsconfig.json": JSON.stringify({
+                  compilerOptions: {
+                    ...(baseUrl ? { baseUrl: "source-root" } : {}),
+                    paths: exact
+                      ? Object.fromEntries(
+                          targets.map((id) => [
+                            `@lib/group${id % 3}/item${id}${suffix}`,
+                            [`lib/group${id % 3}/item${id}`],
+                          ]),
+                        )
+                      : { [`@lib/*${suffix}`]: ["lib/*"] },
+                  },
+                }),
+                ...Object.fromEntries(
+                  targets.map((id) => [`${root}lib/group${id % 3}/item${id}.ts`, "export const value = 1"]),
+                ),
+                ...(baseUrl
+                  ? Object.fromEntries(
+                      targets.map((id) => [`lib/group${id % 3}/item${id}.ts`, "export const decoy = 1"]),
+                    )
+                  : {}),
+                [`module/index.${ext}`]: targets.map((id) => `import "${specifier(id)}"`).join("\n"),
+              })
+              const summary = yield* summarize()
+              expect(summary.dependencies.toSorted((a, b) => a.target.localeCompare(b.target))).toEqual(
+                targets
+                  .map((id) => ({
+                    file: `index.${ext}`,
+                    specifier: specifier(id),
+                    kind: alias ? "alias" : "relative",
+                    target: `${root}lib/group${id % 3}/item${id}.ts`,
+                    directory: `${root}lib/group${id % 3}`,
+                  }))
+                  .toSorted((a, b) => a.target.localeCompare(b.target)),
+              )
+              expect(summary.unresolvedImports).toEqual([])
+              expect(summary.externalPackages).toEqual([])
+            }),
+          ),
       ),
     60000,
   )
@@ -116,20 +138,27 @@ describe("tool.directory_summary properties", () => {
   it.live(
     "P2 metamorphic: duplicate imports preserve frequency",
     () =>
-      check(fc.tuple(ids, fc.integer({ min: 1, max: 4 })), ([targets, count]) =>
+      check(fc.tuple(ids, fc.integer({ min: 1, max: 4 }), fc.boolean()), ([targets, count, collide]) =>
         provideTmpdirInstance(() =>
           Effect.gen(function* () {
+            const target = (id: number) => (collide ? `lib/group${id}/value` : `lib/item${id}`)
             const sources = Array.from({ length: count }, (_, i) => `source${i}.ts`)
             yield* write({
-              ...Object.fromEntries(targets.map((id) => [`lib/item${id}.ts`, "export const value = 1"])),
+              ...Object.fromEntries(targets.map((id) => [`${target(id)}.ts`, "export const value = 1"])),
               ...Object.fromEntries(
-                sources.map((file) => [`module/${file}`, targets.map((id) => `import "../lib/item${id}"`).join("\n")]),
+                sources.map((file) => [`module/${file}`, targets.map((id) => `import "../${target(id)}"`).join("\n")]),
               ),
             })
             const before = yield* summarize()
             expect(before.dependencies).toHaveLength(targets.length * count)
             expect(before.relatedDirectories).toEqual(
-              targets.length ? [{ directory: "lib", imports: targets.length * count, files: sources }] : [],
+              collide
+                ? targets
+                    .map((id) => ({ directory: `lib/group${id}`, imports: count, files: sources }))
+                    .toSorted((a, b) => a.directory.localeCompare(b.directory))
+                : targets.length
+                  ? [{ directory: "lib", imports: targets.length * count, files: sources }]
+                  : [],
             )
             yield* write(
               Object.fromEntries(
@@ -138,9 +167,9 @@ describe("tool.directory_summary properties", () => {
                   targets
                     .toReversed()
                     .flatMap((id) => [
-                      `import "../lib/item${id}"`,
-                      `import "../lib/item${id}"`,
-                      `import "../lib/item${id}.ts"`,
+                      `import "../${target(id)}"`,
+                      `import "../${target(id)}"`,
+                      `import "../${target(id)}.ts"`,
                     ])
                     .join("\n"),
                 ]),
@@ -202,6 +231,7 @@ describe("tool.directory_summary properties", () => {
             { specifier: "node:fs", name: "node:fs", kind: "builtin" },
             { specifier: "path", name: "path", kind: "builtin" },
             { specifier: "bun", name: "bun", kind: "builtin" },
+            { specifier: "bun:test", name: "bun:test", kind: "builtin" },
           ]),
           fc.integer({ min: 1, max: 4 }),
         ),
@@ -239,24 +269,44 @@ describe("tool.directory_summary properties", () => {
 it.live(
   "R2 invariant: purpose communicates uncertainty",
   () =>
-    check(fc.constantFrom("source", "package", "unknown", "empty"), (kind) =>
-      provideTmpdirInstance(() =>
-        Effect.gen(function* () {
-          yield* write(
-            kind === "source"
-              ? { "module/index.ts": "export {}" }
-              : kind === "package"
-                ? { "module/package.json": "{}" }
-                : kind === "unknown"
-                  ? { "module/data.dat": "data" }
-                  : {},
-          )
-          const summary = yield* summarize()
-          expect(summary.purpose).toMatch(
-            kind === "source" || kind === "package" ? /^Likely / : /no (?:more specific )?purpose can be inferred/,
-          )
-        }),
-      ),
+    check(
+      fc.tuple(fc.constantFrom("source", "package", "unknown", "empty", "tests", "docs", "scripts", "groups"), ids),
+      ([kind, values]) =>
+        provideTmpdirInstance(() =>
+          Effect.gen(function* () {
+            yield* write(
+              kind === "source"
+                ? { "module/index.ts": "export {}" }
+                : kind === "package"
+                  ? { "module/package.json": "{}" }
+                  : kind === "unknown"
+                    ? { "module/data.dat": "data" }
+                    : kind === "empty"
+                      ? {}
+                      : kind === "groups"
+                        ? Object.fromEntries(
+                            [0, ...values.map((id) => id + 1)].map((id) => [`module/group${id}/index.ts`, "export {}"]),
+                          )
+                        : Object.fromEntries(
+                            [0, ...values.map((id) => id + 1)].map((id) => [
+                              `module/item${id}.${kind === "tests" ? "test.ts" : kind === "docs" ? "md" : "ts"}`,
+                              "",
+                            ]),
+                          ),
+            )
+            const directory = ["tests", "docs", "scripts"].includes(kind) ? kind : "module"
+            if (directory !== "module") {
+              const fs = yield* FSUtil.Service
+              const instance = yield* requireInstance
+              yield* fs.rename(path.join(instance.directory, "module"), path.join(instance.directory, directory))
+            }
+            const summary = yield* summarize(directory)
+            expect(summary.purpose).toMatch(
+              kind === "empty" || kind === "unknown" ? /no (?:more specific )?purpose can be inferred/ : /^Likely /,
+            )
+            expect(summary.purpose.length).toBeGreaterThan(0)
+          }),
+        ),
     ),
   60000,
 )
@@ -298,26 +348,28 @@ it.live(
 it.live(
   "R4 invariant: missing and deleted directories have explicit errors",
   () =>
-    check(fc.tuple(fc.integer({ min: 0, max: 10000 }), fc.boolean()), ([id, deleted]) =>
-      provideTmpdirInstance(() =>
-        Effect.gen(function* () {
-          const instance = yield* requireInstance
-          const fs = yield* FSUtil.Service
-          const name = `missing${id}`
-          if (deleted) {
-            yield* fs.makeDirectory(path.join(instance.directory, name))
-            yield* fs.remove(path.join(instance.directory, name), { recursive: true })
-          }
-          const info = yield* DirectorySummaryTool
-          const tool = yield* info.init()
-          const result = yield* tool.execute({ path: name }, ctx).pipe(Effect.exit)
-          expect(Exit.isFailure(result)).toBe(true)
-          if (Exit.isSuccess(result)) throw new Error("Expected missing directory failure")
-          expect(String(Cause.squash(result.cause))).toContain(
-            `Directory not found: ${path.join(instance.directory, name)}`,
-          )
-        }),
-      ),
+    check(
+      fc.tuple(fc.integer({ min: 0, max: 10000 }), fc.boolean(), fc.integer({ min: 0, max: 3 })),
+      ([id, deleted, depth]) =>
+        provideTmpdirInstance(() =>
+          Effect.gen(function* () {
+            const instance = yield* requireInstance
+            const fs = yield* FSUtil.Service
+            const name = [...Array.from({ length: depth }, (_, n) => `parent${n}`), `missing${id}`].join("/")
+            if (deleted) {
+              yield* fs.makeDirectory(path.join(instance.directory, name), { recursive: true })
+              yield* fs.remove(path.join(instance.directory, name), { recursive: true })
+            }
+            const info = yield* DirectorySummaryTool
+            const tool = yield* info.init()
+            const result = yield* tool.execute({ path: name }, ctx).pipe(Effect.exit)
+            expect(Exit.isFailure(result)).toBe(true)
+            if (Exit.isSuccess(result)) throw new Error("Expected missing directory failure")
+            expect(String(Cause.squash(result.cause))).toContain(
+              `Directory not found: ${path.join(instance.directory, name)}`,
+            )
+          }),
+        ),
     ),
   60000,
 )
@@ -328,12 +380,18 @@ it.live(
 it.live(
   "R5 metamorphic: additions and deletions refresh the file listing",
   () =>
-    check(fc.tuple(ids, ids), ([original, added]) =>
+    check(fc.tuple(ids, ids, ids), ([original, added, directories]) =>
       provideTmpdirInstance(() =>
         Effect.gen(function* () {
           const instance = yield* requireInstance
           const fs = yield* FSUtil.Service
-          yield* write(Object.fromEntries(original.map((id) => [`module/original${id}.ts`, "export {}"])))
+          yield* write({
+            ...Object.fromEntries(original.map((id) => [`module/original${id}.ts`, "export {}"])),
+            ...Object.fromEntries(directories.map((id) => [`module/folder${id}/index.ts`, "export {}"])),
+          })
+          expect((yield* summarize()).subdirectories.toSorted()).toEqual(
+            directories.map((id) => `folder${id}`).toSorted(),
+          )
           expect((yield* summarize()).files.map((file) => file.name).toSorted()).toEqual(
             original.map((id) => `original${id}.ts`).toSorted(),
           )

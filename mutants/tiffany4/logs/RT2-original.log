@@ -1,0 +1,17 @@
+bun test v1.3.14 (0d9b296a)
+
+test/tool/directory_summary.property.test.ts:
+(pass) tool.directory_summary properties > P1 model/oracle: resolved dependency targets [2166.91ms]
+(pass) tool.directory_summary properties > P2 metamorphic: duplicate imports preserve frequency [3359.61ms]
+(pass) tool.directory_summary properties > P3 metamorphic: internal and nested files preserve outward dependencies [1808.31ms]
+(pass) tool.directory_summary properties > P4 model/oracle: external package and builtin classification [618.12ms]
+(pass) R2 invariant: purpose communicates uncertainty [1537.71ms]
+(pass) R3 invariant: purpose is a concise overview [781.76ms]
+(pass) R4 invariant: missing and deleted directories have explicit errors [1086.32ms]
+(pass) R5 metamorphic: additions and deletions refresh the file listing [1198.20ms]
+(pass) R6 metamorphic: comparable directory renames preserve purpose and roles [1524.47ms]
+
+ 9 pass
+ 0 fail
+ 5700 expect() calls
+Ran 9 tests across 1 file. [15.12s]

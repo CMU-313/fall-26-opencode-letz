@@ -1,0 +1,10 @@
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -112,7 +112,6 @@
+           // Purpose is inferred from every entry so a manifest past the listing limit still counts.
+           const all = {
+             files: entries
+-              .filter((entry) => entry.type === "file")
+               .map((entry) => ({ name: entry.name, role: role(entry.name, path.basename(directory)) })),
+             subdirectories: entries.filter((entry) => entry.type === "directory").map((entry) => entry.name),
+           }

@@ -1,0 +1,11 @@
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -415,7 +415,7 @@
+   const code = files.filter((file) => SOURCE.test(file.name)).length
+   if (/^(?:test|tests|__tests__|spec)$/i.test(name) || (tests > 0 && tests * 2 >= code))
+     return "Likely contains automated tests and supporting fixtures."
+-  if (/^(?:docs?|documentation)$/i.test(name)) return "Likely contains project documentation."
++  if (/^(?:docs?|documentation)$/i.test(name)) return ""
+   if (/^(?:scripts?|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
+   if (code > 0) return "Likely a source module containing application or library implementation."
+   if (files.length === 0 && subdirectories.length > 0)

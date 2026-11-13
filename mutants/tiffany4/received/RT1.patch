@@ -1,0 +1,11 @@
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -62,7 +62,7 @@
+         Schema.decodeUnknownOption(TsConfig)(parse(text, [], { allowTrailingComma: true })),
+       )?.compilerOptions
+       // TypeScript resolves `paths` relative to `baseUrl`, or to the tsconfig directory when it is unset.
+-      const base = path.resolve(path.dirname(config), options?.baseUrl ?? ".")
++      const base = path.resolve(path.dirname(config))
+       return Object.entries(options?.paths ?? {})
+         .map(([pattern, targets]): Alias => {
+           const star = pattern.indexOf("*")
