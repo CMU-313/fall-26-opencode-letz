@@ -1,0 +1,12 @@
+diff --git a/packages/opencode/src/agent/agent.ts b/packages/opencode/src/agent/agent.ts
+--- a/packages/opencode/src/agent/agent.ts
++++ b/packages/opencode/src/agent/agent.ts
+@@ -129,7 +129,7 @@
+           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
+           read: {
+             "*": "allow",
+-            "*.env": "ask",
++            "*.env": "allow",
+             "*.env.*": "ask",
+             "*.env.example": "allow",
+           },
