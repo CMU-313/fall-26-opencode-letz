@@ -15,6 +15,8 @@ import { SessionID } from "../../src/session/schema"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
+fc.configureGlobal({ seed: 42 })
+
 const agentLayer = LayerNode.compile(
   LayerNode.group([
     Agent.node,
@@ -138,39 +140,21 @@ describe("permission rules", () => {
     fc.assert(
       fc.property(command, commandArgument, ({ base, other }, args) => {
         const rules = [{ permission: "*", pattern: "*", action: "ask" as const }]
+        const trailingWildcardRules = [...rules, { permission: "bash", pattern: `${base} *`, action: "allow" as const }]
+        const exactRules = [...rules, { permission: "bash", pattern: base, action: "allow" as const }]
+        const prefixed = `${other} ${base}`
 
         // Check that the trailing wildcard matches both the bare command and a generated argument.
-        expect(
-          Permission.evaluate("bash", base, [...rules, { permission: "bash", pattern: `${base} *`, action: "allow" }])
-            .action,
-        ).toBe("allow")
-        expect(
-          Permission.evaluate("bash", `${base} ${args}`, [
-            ...rules,
-            { permission: "bash", pattern: `${base} *`, action: "allow" },
-          ]).action,
-        ).toBe("allow")
-        expect(
-          Permission.evaluate("bash", other, [
-            ...rules,
-            { permission: "bash", pattern: `${base} *`, action: "allow" },
-          ]).action,
-        ).toBe("ask")
+        expect(Permission.evaluate("bash", base, trailingWildcardRules).action).toBe("allow")
+        expect(Permission.evaluate("bash", `${base} ${args}`, trailingWildcardRules).action).toBe("allow")
+        expect(Permission.evaluate("bash", other, trailingWildcardRules).action).toBe("ask")
+        expect(Permission.evaluate("bash", prefixed, trailingWildcardRules).action).toBe("ask")
 
         // Check that an exact pattern stops matching as soon as an argument is added.
-        expect(
-          Permission.evaluate("bash", base, [...rules, { permission: "bash", pattern: base, action: "allow" }]).action,
-        ).toBe("allow")
-        expect(
-          Permission.evaluate("bash", `${base} ${args}`, [
-            ...rules,
-            { permission: "bash", pattern: base, action: "allow" },
-          ]).action,
-        ).toBe("ask")
-        expect(
-          Permission.evaluate("bash", other, [...rules, { permission: "bash", pattern: base, action: "allow" }])
-            .action,
-        ).toBe("ask")
+        expect(Permission.evaluate("bash", base, exactRules).action).toBe("allow")
+        expect(Permission.evaluate("bash", `${base} ${args}`, exactRules).action).toBe("ask")
+        expect(Permission.evaluate("bash", other, exactRules).action).toBe("ask")
+        expect(Permission.evaluate("bash", prefixed, exactRules).action).toBe("ask")
       }),
     )
   })
@@ -197,7 +181,7 @@ describe("permission rules", () => {
     }),
   )
 
-  // R5: When `opencode` denies a command, it shows the permission rule (pattern and action) that caused the decision. 
+  // R5: When `opencode` denies a command, it shows the permission rule (pattern and action) that caused the decision.
   // Kind: invariant
   it.instance("R5: denied commands show the matching permission rule", () =>
     Effect.gen(function* () {
@@ -206,35 +190,78 @@ describe("permission rules", () => {
       yield* Effect.promise(() =>
         fc.assert(
           // Generate command heads, parts, and arguments that always match the generated deny pattern.
+          fc.asyncProperty(
+            commandHead,
+            commandPart,
+            commandArgument,
+            fc.constantFrom("read", "edit", "glob"),
+            async (head, part, args, unrelatedPermission) => {
+              // Put a matching deny after the general ask rule to exercise the winning rule.
+              const pattern = `${head} ${part} *`
+              const ruleset = [
+                { permission: "bash", pattern: "*", action: "ask" as const },
+                { permission: "bash", pattern, action: "deny" as const },
+                { permission: unrelatedPermission, pattern: "*", action: "deny" as const },
+              ]
+              const exit = await Effect.runPromise(
+                Effect.exit(
+                  permission.ask({
+                    sessionID: SessionID.make("session_property"),
+                    permission: "bash",
+                    patterns: [`${head} ${part} ${args}`],
+                    metadata: {},
+                    always: [],
+                    ruleset,
+                  }),
+                ).pipe(Effect.provideContext(context)),
+              )
+
+              // Check both the structured ruleset and serialized error message expose the deny rule.
+              expect(Exit.isFailure(exit)).toBe(true)
+              if (!Exit.isFailure(exit)) return
+              const error = Cause.squash(exit.cause)
+              expect(error).toBeInstanceOf(PermissionV1.DeniedError)
+              if (!(error instanceof PermissionV1.DeniedError)) return
+              expect(error.ruleset).toContainEqual(expect.objectContaining({ pattern, action: "deny" }))
+              expect(error.ruleset).not.toContainEqual(expect.objectContaining({ permission: unrelatedPermission }))
+              expect(error.message).toContain(`"pattern":"${pattern}"`)
+              expect(error.message).toContain(`"action":"deny"`)
+            },
+          ),
+        ),
+      )
+    }),
+  )
+
+  // R5: When `opencode` denies a command, it shows the permission rule (pattern and action) that caused the decision.
+  // Kind: invariant
+  it.instance("Agent R5 property: matching denied bash commands fail with DeniedError", () =>
+    Effect.gen(function* () {
+      const permission = yield* Permission.Service
+      const context = yield* Effect.context()
+      yield* Effect.promise(() =>
+        fc.assert(
           fc.asyncProperty(commandHead, commandPart, commandArgument, async (head, part, args) => {
-            // Put a matching deny after the general ask rule to exercise the winning rule.
             const pattern = `${head} ${part} *`
-            const ruleset = [
-              { permission: "bash", pattern: "*", action: "ask" as const },
-              { permission: "bash", pattern, action: "deny" as const },
-            ]
             const exit = await Effect.runPromise(
               Effect.exit(
                 permission.ask({
-                  sessionID: SessionID.make("session_property"),
+                  sessionID: SessionID.make("session_agent_r5_property"),
                   permission: "bash",
                   patterns: [`${head} ${part} ${args}`],
                   metadata: {},
                   always: [],
-                  ruleset,
+                  ruleset: [{ permission: "bash", pattern, action: "deny" }],
                 }),
               ).pipe(Effect.provideContext(context)),
             )
 
-            // Check both the structured ruleset and serialized error message expose the deny rule.
             expect(Exit.isFailure(exit)).toBe(true)
             if (!Exit.isFailure(exit)) return
             const error = Cause.squash(exit.cause)
             expect(error).toBeInstanceOf(PermissionV1.DeniedError)
             if (!(error instanceof PermissionV1.DeniedError)) return
             expect(error.ruleset).toContainEqual(expect.objectContaining({ pattern, action: "deny" }))
-            expect(error.message).toContain(`"pattern":"${pattern}"`)
-            expect(error.message).toContain(`"action":"deny"`)
           }),
         ),
       )
