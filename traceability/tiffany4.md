@@ -279,3 +279,7 @@ Before the Project 5 commit:
 - [Exact commands/results](../mutants/tiffany4/final-checks.json) and logs are retained. Original hand-written predictions, patches and initial Stryker reports remain unchanged; production source matches the original commit.
 
 A full final Stryker run and broader survivor/equivalence review remain incomplete. Teammate approval must cover the submitted changes before the authorized merge; CI and merge outcomes are tracked on the existing PR and in the local submission checklist, not assumed here.
+
+### Bounded final-score attempt
+
+After the required artifacts were pushed, one final scoped attempt used `bunx stryker run stryker.tiffany4.config.json --concurrency 8`, with a 600-second outer bound. The dry run passed, but eight concurrent Bun workers consumed roughly 760% CPU and the attempt reported five timeouts by 45/176 mutants; it was stopped rather than treating resource-related timeouts as genuine kills. The initial completed report is untouched, no partial report replaces it, and no final mutation score is claimed. [Attempt log](../mutants/tiffany4/stryker-final.log) and [execution metadata](../mutants/tiffany4/stryker-final-execution.json) preserve this limitation. A controlled final run at the original concurrency remains necessary to meet the final-score requirement.
