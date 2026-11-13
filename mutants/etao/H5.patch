@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/permission/index.ts b/packages/opencode/src/permission/index.ts
+index be640ce..73939f5 100644
+--- a/packages/opencode/src/permission/index.ts
++++ b/packages/opencode/src/permission/index.ts
+@@ -42,7 +42,7 @@ export function explain(permission: string, pattern: string, ...rulesets: Permis
+   const decidedBy = evaluate(permission, pattern, ...rulesets)
+   const matching = rulesets
+     .flat()
+-    .filter((rule) => Wildcard.match(permission, rule.permission) && Wildcard.match(pattern, rule.pattern))
++    .filter((rule) => Wildcard.match(pattern, rule.pattern))
+   const overridden = matching.slice(0, -1).filter((rule) => rule.action !== decidedBy.action)
+   return { decidedBy, overridden }
+ }

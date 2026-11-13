@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "testRunner": "command",
+  "commandRunner": { "command": "bun test test/permission/permission.property.test.ts" },
+  "mutate": [
+    "src/permission/index.ts:28-48",
+    "src/permission/index.ts:196-208",
+    "src/permission/arity.ts:1-9",
+    "src/tool/shell.ts:119-224"
+  ],
+  "coverageAnalysis": "off",
+  "concurrency": 4,
+  "reporters": ["html", "clear-text", "progress"]
+}
