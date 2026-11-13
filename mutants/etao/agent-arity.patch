@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/permission/arity.ts b/packages/opencode/src/permission/arity.ts
+index cd4b0a7..d0930ea 100644
+--- a/packages/opencode/src/permission/arity.ts
++++ b/packages/opencode/src/permission/arity.ts
+@@ -5,7 +5,7 @@ export function prefix(tokens: string[]) {
+     if (arity !== undefined) return tokens.slice(0, arity)
+   }
+   if (tokens.length === 0) return []
+-  return tokens.slice(0, 1)
++  return tokens
+ }
+ 
+ /* Generated with following prompt:

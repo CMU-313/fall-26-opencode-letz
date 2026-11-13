@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/permission/index.ts b/packages/opencode/src/permission/index.ts
+--- a/packages/opencode/src/permission/index.ts
++++ b/packages/opencode/src/permission/index.ts
+@@ -73,8 +73,6 @@
+         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
+         if (rule.action === "deny") {
+-          return yield* new PermissionV1.DeniedError({
+-            ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
+-          })
++          continue
+         }
+         if (rule.action === "allow") continue
+         needsAsk = true

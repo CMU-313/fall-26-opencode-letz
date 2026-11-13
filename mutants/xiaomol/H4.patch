@@ -1,0 +1,16 @@
+diff --git a/packages/opencode/src/tool/repository-overview.ts b/packages/opencode/src/tool/repository-overview.ts
+index 9bdda5f..82d4d3f 100644
+--- a/packages/opencode/src/tool/repository-overview.ts
++++ b/packages/opencode/src/tool/repository-overview.ts
+@@ -259,10 +259,7 @@ export const RepositoryOverviewTool = Tool.define(
+                 ? { name: MANAGERS.get(lockfiles[0])!, version: null, source: lockfiles[0] }
+                 : null,
+             folders: bounded(
+-              entries
+-                .filter((entry) => entry.type === "directory" && !EXCLUDED.has(entry.name))
+-                .map((entry) => entry.name)
+-                .sort(),
++              workspaces.map((workspace) => workspace.path.split("/")[0]).sort(),
+               "folders",
+             ),
+             importantFiles: bounded(

@@ -241,6 +241,27 @@ describe("tool.shell permissions", () => {
     }),
   )
 
+  each("collapses extra spacing between words but keeps quoted spacing", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      yield* runIn(
+        tmp,
+        Effect.gen(function* () {
+          const cases = [
+            ['echo   "a  b"\tc', 'echo "a  b" c'],
+            ["printf $'a\\'  b'   x", "printf $'a\\'  b' x"],
+          ]
+          for (const [command, pattern] of cases) {
+            const requests: Array<Omit<PermissionV1.Request, "id" | "sessionID" | "tool">> = []
+            yield* run({ command }, capture(requests))
+            expect(requests.length).toBe(1)
+            expect(requests[0].patterns).toContain(pattern)
+          }
+        }),
+      )
+    }),
+  )
+
   each("asks for bash permission with multiple commands", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped()

@@ -62,12 +62,24 @@ jobs:
         timeout-minutes: 5
         run: bun test --timeout 60000 test/tool/directory_summary.property.test.ts
 
+      # The package test script uses --only-failures, so run the permission
+      # properties by name here to list each one in the log.
+      - name: Run permission property tests
+        timeout-minutes: 5
+        working-directory: packages/opencode
+        run: bun test test/permission/permission.property.test.ts --timeout 30000
+
       - name: Run unit tests
         timeout-minutes: 15
         # Default turbo concurrency (10) oversubscribes ubuntu-latest's 4
         # vCPUs across 5 packages' test tasks running at once — same
         # contention issue typecheck.yml already caps for tsgo.
         run: GITHUB_ACTIONS=false bun turbo test --concurrency=4
+
+      - name: Run property tests for permission rules
+        timeout-minutes: 5
+        working-directory: packages/opencode
+        run: bun test --timeout 30000 test/permission/permission.property.test.ts
 
       - name: Check generated client
         timeout-minutes: 5

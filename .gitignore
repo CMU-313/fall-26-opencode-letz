@@ -5,5 +5,7 @@ coverage-html
 *.lcov
 .turbo
 .qlty
+reports/
+.stryker-tmp/
 packages/sdk/js/tsconfig.tsbuildinfo
 test-results/.last-run.json

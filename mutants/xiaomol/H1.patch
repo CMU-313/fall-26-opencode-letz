@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/tool/repository-overview.ts b/packages/opencode/src/tool/repository-overview.ts
+index 9bdda5f..ce076b3 100644
+--- a/packages/opencode/src/tool/repository-overview.ts
++++ b/packages/opencode/src/tool/repository-overview.ts
+@@ -62,7 +62,7 @@ const PackageMetadata = Schema.Struct({
+ 
+ const LANGUAGES = new Map([
+   ["typescript", "TypeScript"],
+-  ["typescriptreact", "TypeScript"],
++  ["typescriptreact", "JavaScript"],
+   ["javascript", "JavaScript"],
+   ["javascriptreact", "JavaScript"],
+   ["python", "Python"],
