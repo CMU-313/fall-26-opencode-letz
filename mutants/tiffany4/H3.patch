@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/tool/directory_summary.ts b/packages/opencode/src/tool/directory_summary.ts
+index aef60bb..9acb09b 100644
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -231,7 +231,7 @@ export const DirectorySummaryTool = Tool.define(
+               for (const target of alias.targets) {
+                 const resolved = yield* resolveModule(target.replace("*", match))
+                 if (resolved)
+-                  return { type: "dependency", kind: "alias", target: resolved, directory: path.dirname(resolved) }
++                  return { type: "dependency", kind: "relative", target: resolved, directory: path.dirname(resolved) }
+               }
+               return { type: "unresolved" }
+             }

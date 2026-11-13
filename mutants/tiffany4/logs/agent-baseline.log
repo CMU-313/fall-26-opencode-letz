@@ -1,0 +1,9 @@
+bun test v1.3.14 (0d9b296a)
+
+test/tool/directory_summary.agent-failure.test.ts:
+(pass) directory_summary R2: inferred purpose is tentative and absent inference is stated explicitly [1960.37ms]
+
+ 1 pass
+ 0 fail
+ 300 expect() calls
+Ran 1 test across 1 file. [2.98s]

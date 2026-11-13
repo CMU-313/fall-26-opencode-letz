@@ -1,0 +1,16 @@
+$ bun run script/build.ts --single --skip-install --skip-embed-web-ui
+opencode script {
+  "channel": "p5-verification",
+  "version": "0.0.0-p5-verification-202611130436",
+  "preview": true,
+  "release": false,
+  "team": [
+    "actions-user",
+    "opencode",
+    "opencode-agent[bot]"
+  ]
+}
+Loaded models.dev snapshot
+building opencode-darwin-arm64
+Running smoke test: dist/opencode-darwin-arm64/bin/opencode --version
+Smoke test passed: 0.0.0-p5-verification-202611130436

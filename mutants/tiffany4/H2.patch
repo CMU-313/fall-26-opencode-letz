@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/tool/directory_summary.ts b/packages/opencode/src/tool/directory_summary.ts
+index aef60bb..1ffce62 100644
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -103,7 +103,7 @@ export const DirectorySummaryTool = Tool.define(
+             Effect.catchReason("PlatformError", "NotFound", () => Effect.void),
+             Effect.catch(inaccessible),
+           )
+-          if (!stat) return yield* Effect.fail(new Error(`Directory not found: ${directory}`))
++          if (!stat) return yield* inaccessible()
+           if (stat.type !== "Directory") return yield* Effect.fail(new Error(`Path is not a directory: ${directory}`))
+ 
+           const entries = (yield* fs.readDirectoryEntries(directory).pipe(Effect.catch(inaccessible))).toSorted(

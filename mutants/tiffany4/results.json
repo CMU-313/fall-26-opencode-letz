@@ -1,0 +1,133 @@
+{
+  "base_commit": "6b7881bc84ff20f0307e895cb14f369d30bf9839",
+  "seed": 17313,
+  "predictions_sha256": "248a03912f4a4df0dc6c6b58ac48792a356b0d1a36e35404c4d9e30bc5d4dd78",
+  "source_sha256": "764912d5822b1a11cf16ce78e74d0f045173176616637b2ddd39edcec046266e",
+  "runs": {
+    "baseline": {
+      "command": [
+        "bun",
+        "test",
+        "--timeout",
+        "60000",
+        "test/tool/directory_summary.property.test.ts"
+      ],
+      "exit_code": 0,
+      "seconds": 12.82,
+      "log": "logs/baseline.log"
+    },
+    "H1": {
+      "command": [
+        "bun",
+        "test",
+        "--timeout",
+        "60000",
+        "test/tool/directory_summary.property.test.ts",
+        "--test-name-pattern",
+        "R[23] invariant:"
+      ],
+      "exit_code": 1,
+      "seconds": 2.39,
+      "log": "logs/H1.log",
+      "outcome": "killed",
+      "killed_by": [
+        "R2",
+        "R3"
+      ],
+      "failure_class": "property assertion"
+    },
+    "H2": {
+      "command": [
+        "bun",
+        "test",
+        "--timeout",
+        "60000",
+        "test/tool/directory_summary.property.test.ts",
+        "--test-name-pattern",
+        "R4 invariant:"
+      ],
+      "exit_code": 1,
+      "seconds": 0.83,
+      "log": "logs/H2.log",
+      "outcome": "killed",
+      "killed_by": [
+        "R4"
+      ],
+      "failure_class": "property assertion"
+    },
+    "H3": {
+      "command": [
+        "bun",
+        "test",
+        "--timeout",
+        "60000",
+        "test/tool/directory_summary.property.test.ts",
+        "--test-name-pattern",
+        "P1 model/oracle:"
+      ],
+      "exit_code": 1,
+      "seconds": 1.96,
+      "log": "logs/H3.log",
+      "outcome": "killed",
+      "killed_by": [
+        "P1"
+      ],
+      "failure_class": "property assertion"
+    },
+    "H4": {
+      "command": [
+        "bun",
+        "test",
+        "--timeout",
+        "60000",
+        "test/tool/directory_summary.property.test.ts",
+        "--test-name-pattern",
+        "P2 metamorphic:"
+      ],
+      "exit_code": 1,
+      "seconds": 1.96,
+      "log": "logs/H4.log",
+      "outcome": "killed",
+      "killed_by": [
+        "P2"
+      ],
+      "failure_class": "property assertion"
+    },
+    "H5": {
+      "command": [
+        "bun",
+        "test",
+        "--timeout",
+        "60000",
+        "test/tool/directory_summary.property.test.ts",
+        "--test-name-pattern",
+        "P3 metamorphic:"
+      ],
+      "exit_code": 1,
+      "seconds": 1.05,
+      "log": "logs/H5.log",
+      "outcome": "killed",
+      "killed_by": [
+        "P3"
+      ],
+      "failure_class": "property assertion"
+    },
+    "restored": {
+      "command": [
+        "bun",
+        "test",
+        "--timeout",
+        "60000",
+        "test/tool/directory_summary.property.test.ts"
+      ],
+      "exit_code": 0,
+      "seconds": 14.4,
+      "log": "logs/restored.log"
+    }
+  },
+  "verification": {
+    "source_restored": true,
+    "predictions_unchanged": true,
+    "all_five_apply_independently": true
+  }
+}

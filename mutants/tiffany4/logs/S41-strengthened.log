@@ -1,0 +1,96 @@
+bun test v1.3.14 (0d9b296a)
+
+test/tool/directory_summary.property.test.ts:
+[04:33:24.050] ERROR (#2): 2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 2 tests
+{ seed: 17313, path: "1:1:1:1", endOnFailure: true }
+Counterexample: [[[0],"ts",true,false,"",true]]
+Shrunk 3 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (unknown:7:39)
+
+110 |                     )
+111 |                   : {}),
+112 |                 [`module/index.${ext}`]: targets.map((id) => `import "${specifier(id)}"`).join("\n"),
+113 |               })
+114 |               const summary = yield* summarize()
+115 |               expect(summary.dependencies.toSorted((a, b) => a.target.localeCompare(b.target))).toEqual(
+      ^
+error: expect(received).toEqual(expected)
+
+- [
+-   {
+-     "directory": "lib/group0",
+-     "file": "index.ts",
+-     "kind": "alias",
+-     "specifier": "@lib/group0/item0",
+-     "target": "lib/group0/item0.ts",
+-   },
+- ]
++ []
+
+- Expected  - 9
++ Received  + 1
+
+      at toEqual (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:115:97
+
+2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 2 tests
+{ seed: 17313, path: "1:1:1:1", endOnFailure: true }
+Counterexample: [[[0],"ts",true,false,"",true]]
+Shrunk 3 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (unknown:7:39)
+
+110 |                     )
+111 |                   : {}),
+112 |                 [`module/index.${ext}`]: targets.map((id) => `import "${specifier(id)}"`).join("\n"),
+113 |               })
+114 |               const summary = yield* summarize()
+115 |               expect(summary.dependencies.toSorted((a, b) => a.target.localeCompare(b.target))).toEqual(
+      ^
+error: expect(received).toEqual(expected)
+
+- [
+-   {
+-     "directory": "lib/group0",
+-     "file": "index.ts",
+-     "kind": "alias",
+-     "specifier": "@lib/group0/item0",
+-     "target": "lib/group0/item0.ts",
+-   },
+- ]
++ []
+
+- Expected  - 9
++ Received  + 1
+
+      at toEqual (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:115:97
+      at ~effect/Effect/successCont (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (unknown:7:39)
+(fail) tool.directory_summary properties > P1 model/oracle: resolved dependency targets [1363.31ms]
+Ran 1 test across 1 file. [2.01s]
+Bailed out after 1 failure

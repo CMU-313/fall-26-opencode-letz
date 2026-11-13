@@ -1,0 +1,74 @@
+bun test v1.3.14 (0d9b296a)
+
+test/tool/directory_summary.property.test.ts:
+[04:33:30.660] ERROR (#2): 2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0", endOnFailure: true }
+Counterexample: [["tests",[]]]
+Shrunk 0 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (native:7:39)
+
+297 |               const fs = yield* FSUtil.Service
+298 |               const instance = yield* requireInstance
+299 |               yield* fs.rename(path.join(instance.directory, "module"), path.join(instance.directory, directory))
+300 |             }
+301 |             const summary = yield* summarize(directory)
+302 |             expect(summary.purpose).toMatch(
+      ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^Likely /
+Received: ""
+
+      at toMatch (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:302:37
+
+2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0", endOnFailure: true }
+Counterexample: [["tests",[]]]
+Shrunk 0 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (native:7:39)
+
+297 |               const fs = yield* FSUtil.Service
+298 |               const instance = yield* requireInstance
+299 |               yield* fs.rename(path.join(instance.directory, "module"), path.join(instance.directory, directory))
+300 |             }
+301 |             const summary = yield* summarize(directory)
+302 |             expect(summary.purpose).toMatch(
+      ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^Likely /
+Received: ""
+
+      at toMatch (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:302:37
+      at ~effect/Effect/successCont (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (unknown:7:39)
+(fail) R2 invariant: purpose communicates uncertainty [267.51ms]
+Ran 1 test across 1 file. [927.00ms]
+Bailed out after 1 failure

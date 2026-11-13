@@ -1,0 +1,11 @@
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -222,7 +222,7 @@
+                 ? specifier.startsWith(item.prefix) &&
+                   specifier.endsWith(item.suffix) &&
+                   specifier.length >= item.prefix.length + item.suffix.length
+-                : specifier === item.prefix,
++                : false,
+             )
+             if (alias) {
+               const match = alias.wildcard

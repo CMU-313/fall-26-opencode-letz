@@ -1,0 +1,24 @@
+diff --git a/packages/opencode/src/permission/index.ts b/packages/opencode/src/permission/index.ts
+index 2e27ff2..72601e1 100644
+--- a/packages/opencode/src/permission/index.ts
++++ b/packages/opencode/src/permission/index.ts
+@@ -25,10 +25,18 @@ interface State {
+   approved: PermissionV1.Rule[]
+ }
+ 
++const ruleCache = new WeakMap<PermissionV1.Ruleset, PermissionV1.Rule[]>()
++
+ export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
+   return (
+     rulesets
+-      .flat()
++      .flatMap((ruleset) => {
++        const cached = ruleCache.get(ruleset)
++        if (cached) return cached
++        const rules = [...ruleset]
++        ruleCache.set(ruleset, rules)
++        return rules
++      })
+       .findLast((rule) => Wildcard.match(permission, rule.permission) && Wildcard.match(pattern, rule.pattern)) ?? {
+       action: "ask",
+       permission,

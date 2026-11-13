@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/tool/directory_summary.ts b/packages/opencode/src/tool/directory_summary.ts
+index aef60bb..92e3006 100644
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -417,7 +417,7 @@ function purpose(name: string, files: { name: string; role: string }[], subdirec
+     return "Likely contains automated tests and supporting fixtures."
+   if (/^(?:docs?|documentation)$/i.test(name)) return "Likely contains project documentation."
+   if (/^(?:scripts?|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
+-  if (code > 0) return "Likely a source module containing application or library implementation."
++  if (code > 0) return "A source module containing application or library implementation."
+   if (files.length === 0 && subdirectories.length > 0)
+     return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
+   return "Groups project files and subdirectories; no more specific purpose can be inferred."

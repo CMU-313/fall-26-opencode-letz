@@ -1,0 +1,10 @@
+bun test v1.3.14 (0d9b296a)
+
+test/tool/directory_summary.property.test.ts:
+(pass) tool.directory_summary properties > P4 model/oracle: external package and builtin classification [2236.37ms]
+
+ 1 pass
+ 8 filtered out
+ 0 fail
+ 600 expect() calls
+Ran 1 test across 1 file. [3.29s]

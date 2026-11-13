@@ -1,0 +1,11 @@
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -419,7 +419,7 @@
+   if (/^(?:scripts?|bin)$/i.test(name)) return "Likely contains tools or automation scripts."
+   if (code > 0) return "Likely a source module containing application or library implementation."
+   if (files.length === 0 && subdirectories.length > 0)
+-    return `Likely groups related modules or packages: ${subdirectories.slice(0, 5).join(", ")}${subdirectories.length > 5 ? ", ..." : ""}.`
++    return ``
+   return "Groups project files and subdirectories; no more specific purpose can be inferred."
+ }
+ 

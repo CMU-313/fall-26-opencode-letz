@@ -1,0 +1,10 @@
+{
+  "baseline": {
+    "exit_code": 0,
+    "log": "logs/agent-baseline.log"
+  },
+  "S147": {
+    "exit_code": 0,
+    "log": "logs/agent-S147.log"
+  }
+}

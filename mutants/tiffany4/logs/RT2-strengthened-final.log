@@ -1,0 +1,74 @@
+bun test v1.3.14 (0d9b296a)
+
+test/tool/directory_summary.property.test.ts:
+[04:35:07.545] ERROR (#2): 2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0:1:1", endOnFailure: true }
+Counterexample: [[[0,1],1,true]]
+Shrunk 2 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (native:7:39)
+
+148 |               ...Object.fromEntries(
+149 |                 sources.map((file) => [`module/${file}`, targets.map((id) => `import "../${target(id)}"`).join("\n")]),
+150 |               ),
+151 |             })
+152 |             const before = yield* summarize()
+153 |             expect(before.dependencies).toHaveLength(targets.length * count)
+      ^
+error: expect(received).toHaveLength(expected)
+
+Expected length: 2
+Received length: 1
+
+      at toHaveLength (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:153:41
+
+2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0:1:1", endOnFailure: true }
+Counterexample: [[[0,1],1,true]]
+Shrunk 2 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (native:7:39)
+
+148 |               ...Object.fromEntries(
+149 |                 sources.map((file) => [`module/${file}`, targets.map((id) => `import "../${target(id)}"`).join("\n")]),
+150 |               ),
+151 |             })
+152 |             const before = yield* summarize()
+153 |             expect(before.dependencies).toHaveLength(targets.length * count)
+      ^
+error: expect(received).toHaveLength(expected)
+
+Expected length: 2
+Received length: 1
+
+      at toHaveLength (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:153:41
+      at ~effect/Effect/successCont (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (unknown:7:39)
+(fail) tool.directory_summary properties > P2 metamorphic: duplicate imports preserve frequency [1334.32ms]
+Ran 1 test across 1 file. [1.97s]
+Bailed out after 1 failure

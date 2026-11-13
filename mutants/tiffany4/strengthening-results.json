@@ -1,0 +1,221 @@
+{
+  "S10-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "R5 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/S10-strengthened.log"
+  },
+  "S35-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "P1 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/S35-strengthened.log"
+  },
+  "S41-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "P1 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/S41-strengthened.log"
+  },
+  "S46-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "P1 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/S46-strengthened.log"
+  },
+  "S62-strengthened": {
+    "exit_code": 0,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "P4 "
+    ],
+    "assertion_failure": false,
+    "log": "logs/S62-strengthened.log"
+  },
+  "S141-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "R2 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/S141-strengthened.log"
+  },
+  "S147-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "R2 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/S147-strengthened.log"
+  },
+  "S153-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "R2 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/S153-strengthened.log"
+  },
+  "S167-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "R2 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/S167-strengthened.log"
+  },
+  "RT1-original": {
+    "exit_code": 0,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts"
+    ],
+    "assertion_failure": false,
+    "log": "logs/RT1-original.log"
+  },
+  "RT1-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "P1 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/RT1-strengthened.log"
+  },
+  "RT2-original": {
+    "exit_code": 0,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts"
+    ],
+    "assertion_failure": false,
+    "log": "logs/RT2-original.log"
+  },
+  "RT2-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "P2 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/RT2-strengthened.log"
+  },
+  "RT3-original": {
+    "exit_code": 0,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts"
+    ],
+    "assertion_failure": false,
+    "log": "logs/RT3-original.log"
+  },
+  "RT3-strengthened": {
+    "exit_code": 1,
+    "command": [
+      "bun",
+      "test",
+      "--timeout",
+      "60000",
+      "--bail",
+      "test/tool/directory_summary.property.test.ts",
+      "--test-name-pattern",
+      "R4 "
+    ],
+    "assertion_failure": true,
+    "log": "logs/RT3-strengthened.log"
+  }
+}

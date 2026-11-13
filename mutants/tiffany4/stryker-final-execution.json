@@ -1,0 +1,7 @@
+{
+  "command": "bunx stryker run stryker.tiffany4.config.json --concurrency 8",
+  "limit_seconds": 600,
+  "exit_code": 143,
+  "seconds": 257.89,
+  "stopped_reason": "Stopped after five timeouts under eight-worker CPU contention; no final report/score accepted and no timeout counted as a genuine kill."
+}

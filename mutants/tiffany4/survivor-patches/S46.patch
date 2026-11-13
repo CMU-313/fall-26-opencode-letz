@@ -1,0 +1,11 @@
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -226,7 +226,7 @@
+             )
+             if (alias) {
+               const match = alias.wildcard
+-                ? specifier.slice(alias.prefix.length, specifier.length - alias.suffix.length)
++                ? specifier.slice(alias.prefix.length, specifier.length + alias.suffix.length)
+                 : ""
+               for (const target of alias.targets) {
+                 const resolved = yield* resolveModule(target.replace("*", match))

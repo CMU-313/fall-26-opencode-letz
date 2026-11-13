@@ -1,0 +1,151 @@
+Command: bun test --timeout 60000 test/tool/directory_summary.property.test.ts --test-name-pattern R[23] invariant:
+Working directory: /Users/ttscl/opencode/packages/opencode
+Seed: 17313
+
+bun test v1.3.14 (0d9b296a)
+
+test/tool/directory_summary.property.test.ts:
+[04:06:22.648] ERROR (#2): 2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0", endOnFailure: true }
+Counterexample: ["source"]
+Shrunk 0 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (native:7:39)
+
+250 |                 : kind === "unknown"
+251 |                   ? { "module/data.dat": "data" }
+252 |                   : {},
+253 |           )
+254 |           const summary = yield* summarize()
+255 |           expect(summary.purpose).toMatch(
+      ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^Likely /
+Received: "A source module containing application or library implementation."
+
+      at toMatch (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:255:35
+
+2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0", endOnFailure: true }
+Counterexample: ["source"]
+Shrunk 0 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (native:7:39)
+
+250 |                 : kind === "unknown"
+251 |                   ? { "module/data.dat": "data" }
+252 |                   : {},
+253 |           )
+254 |           const summary = yield* summarize()
+255 |           expect(summary.purpose).toMatch(
+      ^
+error: expect(received).toMatch(expected)
+
+Expected substring or pattern: /^Likely /
+Received: "A source module containing application or library implementation."
+
+      at toMatch (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:255:35
+      at ~effect/Effect/successCont (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (native:7:39)
+(fail) R2 invariant: purpose communicates uncertainty [215.28ms]
+[04:06:23.014] ERROR (#546): 2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0:1:0:1", endOnFailure: true }
+Counterexample: [[[0],false]]
+Shrunk 3 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (unknown:7:39)
+
+277 |           const summary = yield* summarize()
+278 |           expect(summary.purpose.length).toBeGreaterThan(0)
+279 |           expect(summary.purpose.length).toBeLessThanOrEqual(200)
+280 |           expect(summary.purpose.match(/[.!?](?:\s|$)/g)?.length).toBeGreaterThanOrEqual(1)
+281 |           expect(summary.purpose.match(/[.!?](?:\s|$)/g)?.length).toBeLessThanOrEqual(2)
+282 |           expect(summary.purpose).toBe(
+      ^
+error: expect(received).toBe(expected)
+
+Expected: "Likely a source module containing application or library implementation."
+Received: "A source module containing application or library implementation."
+
+      at toBe (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:282:35
+
+2464 | 	return defaultReportMessageInternal(out, stringifySecond);
+2465 | }
+2466 | /** @internal */
+2467 | function buildError(errorMessage, out) {
+2468 | 	if (out.runConfiguration.includeErrorInReport) throw new SError(errorMessage);
+2469 | 	const error = new SError(errorMessage, { cause: out.errorInstance });
+                          ^
+error: Property failed after 1 tests
+{ seed: 17313, path: "0:1:0:1", endOnFailure: true }
+Counterexample: [[[0],false]]
+Shrunk 3 time(s)
+
+Hint: Enable verbose mode in order to have the list of all failing values encountered during the run
+      at buildError (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:2469:20)
+      at asyncThrowIfFailed (/Users/ttscl/opencode/node_modules/.bun/fast-check@4.10.2/node_modules/fast-check/lib/fast-check.js:3059:2)
+      at processTicksAndRejections (unknown:7:39)
+
+277 |           const summary = yield* summarize()
+278 |           expect(summary.purpose.length).toBeGreaterThan(0)
+279 |           expect(summary.purpose.length).toBeLessThanOrEqual(200)
+280 |           expect(summary.purpose.match(/[.!?](?:\s|$)/g)?.length).toBeGreaterThanOrEqual(1)
+281 |           expect(summary.purpose.match(/[.!?](?:\s|$)/g)?.length).toBeLessThanOrEqual(2)
+282 |           expect(summary.purpose).toBe(
+      ^
+error: expect(received).toBe(expected)
+
+Expected: "Likely a source module containing application or library implementation."
+Received: "A source module containing application or library implementation."
+
+      at toBe (unknown:1:1)
+      at /Users/ttscl/opencode/packages/opencode/test/tool/directory_summary.property.test.ts:282:35
+      at ~effect/Effect/successCont (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:910:23)
+      at runLoop (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:420:66)
+      at evaluate (/Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:380:20)
+      at /Users/ttscl/opencode/node_modules/.bun/effect@4.0.0-beta.83/node_modules/effect/dist/internal/effect.js:734:14
+      at processTicksAndRejections (unknown:7:39)
+(fail) R3 invariant: purpose is a concise overview [364.06ms]
+
+ 0 pass
+ 7 filtered out
+ 2 fail
+ 52 expect() calls
+Ran 2 tests across 1 file. [2.33s]

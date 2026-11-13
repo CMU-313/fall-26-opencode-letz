@@ -1,0 +1,11 @@
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -220,7 +220,7 @@
+             const alias = aliases.find((item) =>
+               item.wildcard
+                 ? specifier.startsWith(item.prefix) &&
+-                  specifier.endsWith(item.suffix) &&
++                  specifier.startsWith(item.suffix) &&
+                   specifier.length >= item.prefix.length + item.suffix.length
+                 : specifier === item.prefix,
+             )

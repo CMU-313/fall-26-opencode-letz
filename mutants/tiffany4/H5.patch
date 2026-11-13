@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/tool/directory_summary.ts b/packages/opencode/src/tool/directory_summary.ts
+index aef60bb..3c8b3c9 100644
+--- a/packages/opencode/src/tool/directory_summary.ts
++++ b/packages/opencode/src/tool/directory_summary.ts
+@@ -318,7 +318,7 @@ export const DirectorySummaryTool = Tool.define(
+                 continue
+               }
+               // Imports that stay inside the summarized directory, including its subdirectories, are internal structure.
+-              if (FSUtil.contains(directory, resolved.target)) continue
++              if (resolved.target.startsWith(directory)) continue
+               const key = `${file.name}\0${resolved.target}`
+               if (dependencies.has(key)) continue
+               dependencies.set(key, {

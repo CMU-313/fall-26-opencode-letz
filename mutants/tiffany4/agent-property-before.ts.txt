@@ -1,0 +1,118 @@
+import { describe, expect } from "bun:test"
+import path from "path"
+import fc from "fast-check"
+import { Cause, Effect, Exit } from "effect"
+import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { FSUtil } from "@opencode-ai/core/fs-util"
+import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Agent } from "@/agent/agent"
+import { MessageID, SessionID } from "@/session/schema"
+import { DirectorySummaryTool } from "@/tool/directory_summary"
+import { Tool } from "@/tool/tool"
+import { Truncate } from "@/tool/truncate"
+import { requireInstance, provideTmpdirInstance } from "../fixture/fixture"
+import { testEffect } from "../lib/effect"
+
+const it = testEffect(
+  LayerNode.compile(LayerNode.group([FSUtil.node, Agent.node, Truncate.node, CrossSpawnSpawner.node])),
+)
+const ctx: Tool.Context = {
+  sessionID: SessionID.make("ses_property"),
+  messageID: MessageID.make("msg_property"),
+  agent: "build",
+  abort: new AbortController().signal,
+  messages: [],
+  metadata: () => Effect.void,
+  ask: () => Effect.void,
+}
+type Summary = {
+  purpose: string
+  files: { name: string; role: string }[]
+  subdirectories: string[]
+  dependencies: { file: string; specifier: string; kind: string; target: string; directory: string }[]
+  relatedDirectories: { directory: string; imports: number; files: string[] }[]
+  externalPackages: { name: string; kind: string; files: string[] }[]
+  unresolvedImports: { file: string; specifier: string }[]
+  truncated: boolean
+  skipped: unknown[]
+}
+const summarize = Effect.fn("DirectorySummaryProperty.summarize")(function* () {
+  const info = yield* DirectorySummaryTool
+  const tool = yield* info.init()
+  const result: Summary = JSON.parse((yield* tool.execute({ path: "module" }, ctx)).output)
+  expect(result.truncated).toBe(false)
+  expect(result.skipped).toEqual([])
+  return result
+})
+const write = Effect.fn("DirectorySummaryProperty.write")(function* (files: Record<string, string>) {
+  const instance = yield* requireInstance
+  const fs = yield* FSUtil.Service
+  yield* fs.makeDirectory(path.join(instance.directory, "module"), { recursive: true })
+  yield* Effect.forEach(Object.entries(files), ([name, text]) =>
+    fs.writeWithDirs(path.join(instance.directory, name), text),
+  )
+})
+
+// Capture the live test services; each generated case gets its own scoped workspace.
+function check<A, E, R>(arbitrary: fc.Arbitrary<A>, body: (value: A) => Effect.Effect<void, E, R>) {
+  return Effect.gen(function* () {
+    const services = yield* Effect.context<R>()
+    yield* Effect.promise(() =>
+      fc.assert(
+        fc.asyncProperty(arbitrary, (value) => Effect.runPromiseWith(services)(body(value))),
+        {
+          numRuns: 100,
+          seed: 17313,
+        },
+      ),
+    )
+  })
+}
+const ids = fc.uniqueArray(fc.integer({ min: 0, max: 12 }), { maxLength: 8 })
+const extension = fc.constantFrom("ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs")
+
+const dirSummaryGen = fc.oneof(
+  // names a purpose can genuinely be inferred from
+  fc.record({
+    dir: fc.constantFrom("tests", "utils", "config", "auth", "docs", "cache"),
+    files: fc.array(
+      fc.record({
+        name: fc.stringMatching(/^[a-z]{2,10}(-[a-z]{2,10})?\.(ts|md|json)$/),
+        content: fc.constant("placeholder"),
+      }),
+      { minLength: 1, maxLength: 5 },
+    ),
+    expect: fc.constant("tentative"),
+  }),
+  // names carrying no interpretable signal at all
+  fc.record({
+    dir: fc.stringMatching(/^[0-9a-f]{8,12}$/),
+    files: fc.array(
+      fc.record({
+        name: fc.stringMatching(/^[0-9a-f]{4,8}$/),
+        content: fc.constant("placeholder"),
+      }),
+      { minLength: 1, maxLength: 5 },
+    ),
+    expect: fc.constant("none"),
+  }),
+)
+
+it.live(
+  "directory_summary R2: inferred purpose is tentative and absent inference is stated explicitly",
+  () =>
+    check(dirSummaryGen, (gen) =>
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          yield* write(Object.fromEntries(gen.files.map((file) => [`${gen.dir}/${file.name}`, file.content])))
+          const result = yield* summarize()
+          if (gen.expect === "none") {
+            expect(result.purpose).toMatch(/no (?:more specific )?purpose can be inferred|no specific|cannot|unclear|unknown|no clear|not inferred/i)
+          } else {
+            expect(result.purpose).toMatch(/tentative|inferred|likely|appears|probably|possibly|may\b/i)
+          }
+        }),
+      ),
+    ),
+  60000,
+)

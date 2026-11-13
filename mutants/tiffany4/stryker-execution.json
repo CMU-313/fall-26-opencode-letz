@@ -1,0 +1,7 @@
+{
+  "command": "bunx stryker run stryker.tiffany4.config.json",
+  "cwd": "packages/opencode",
+  "limit_seconds": 1500,
+  "exit_code": 0,
+  "seconds": 960.17
+}
