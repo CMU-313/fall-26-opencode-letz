@@ -10,3 +10,6 @@ temporary-*.md
 # Project 5: Stryker generated output
 /reports/
 /.stryker-tmp/
+# mutation testing (Stryker)
+reports/
+.stryker-tmp/

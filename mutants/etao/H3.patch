@@ -1,0 +1,21 @@
+diff --git a/packages/opencode/src/permission/index.ts b/packages/opencode/src/permission/index.ts
+index be640ce..d8cdd53 100644
+--- a/packages/opencode/src/permission/index.ts
++++ b/packages/opencode/src/permission/index.ts
+@@ -26,10 +26,13 @@ interface State {
+ }
+ 
+ export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
++  const rules = rulesets.flat()
++  const matches = (rule: PermissionV1.Rule) =>
++    Wildcard.match(permission, rule.permission) && Wildcard.match(pattern, rule.pattern)
++  // Deny always wins, so a later allow can never undo it.
+   return (
+-    rulesets
+-      .flat()
+-      .findLast((rule) => Wildcard.match(permission, rule.permission) && Wildcard.match(pattern, rule.pattern)) ?? {
++    rules.find((rule) => rule.action === "deny" && matches(rule)) ??
++    rules.findLast(matches) ?? {
+       action: "ask",
+       permission,
+       pattern: "*",
